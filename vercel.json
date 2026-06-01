@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pip install mkdocs-material==9.6.* mkdocs-jupyter==0.25.* && bash scripts/build_docs.sh",
+  "buildCommand": "pip install --break-system-packages mkdocs-material==9.6.* mkdocs-jupyter==0.25.* && bash scripts/build_docs.sh",
   "installCommand": "echo skip",
   "outputDirectory": "site",
   "framework": null,
