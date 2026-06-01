@@ -32,18 +32,33 @@ pip install sablier-flow
 
 Sign up at [sablier.ai](https://sablier.ai) for an API key (free starter credits cover the entire getting-started notebook).
 
-## Five-line demo
+## Quickstart
 
 ```python
 import sablier_flow as sf
+import numpy as np
 
-sf.login()  # one-time device-auth flow
+# 1. Auth (one-time device flow; sets ~/.sablier/credentials)
+sf.login()
 
-df     = sf.demo_data()                                                        # or your own DataFrame
-fit    = sf.fit(df, features=list(df.columns), data_types={c: "price" for c in df.columns}, horizon=63)
-paths  = sf.generate(fit.model_id, n_paths=200)
-synth  = [my_backtest(p) for p in paths.as_dataframes()]
-report = sf.robustness(my_backtest(df), synth, primary_metric="sharpe")
+# 2. Your backtest. Takes a price DataFrame, returns dict[str, float].
+def my_backtest(prices):
+    rets = prices['SPY'].pct_change().dropna()
+    return {'sharpe': float(rets.mean() / rets.std() * np.sqrt(252))} if rets.std() > 0 else {'sharpe': 0.0}
+
+# 3. Load data — bundled demo or your own DataFrame.
+df = sf.demo_data()                          # SPY/QQQ/IWM/TLT + 3 macro features, 2010-2024
+backtest_window = df.iloc[-252:]             # the slice you'll evaluate
+
+# 4. Train + generate synthetic alternative versions of the backtest window.
+fit   = sf.fit(df, features=list(df.columns), data_types=df.attrs['data_types'], horizon=252)
+paths = sf.generate(fit.model_id, n_paths=200, like=backtest_window)
+
+# 5. Run your backtest on each synth path and score robustness.
+real_result   = my_backtest(backtest_window)
+synth_results = [my_backtest(p) for p in paths.as_dataframes()]
+report = sf.robustness(real_result, synth_results, primary_metric='sharpe')
+
 print(report.summary())
 ```
 

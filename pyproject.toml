@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling>=1.18"]
+requires = ["hatchling>=1.18,<1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "sablier-flow"
-version = "1.0.13"
+version = "1.0.14"
 description = "Synthetic alternative-history generation for backtest overfitting detection"
 readme = "README.md"
 requires-python = ">=3.10"

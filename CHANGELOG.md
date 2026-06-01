@@ -7,23 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.13] - 2026-06-01 — initial public release
+## [1.0.14] - 2026-06-01 — README fix-pass + PyPI metadata correction
+
+### Fixed
+- README 'Five-line demo' is now copy-paste runnable: `my_backtest` is defined inline,
+  `df.attrs['data_types']` carries the canonical 5-type contract (1.0.9+) instead
+  of the wrong {c:'price' for c in df.columns}, and `sf.generate(like=...)` ensures
+  real and synthetic shapes match in `sf.robustness`. Renamed to 'Quickstart' since
+  it is no longer literally 5 lines.
+- pyproject.toml: ship Homepage `https://docs.sablier.ai` (1.0.13's wheel pinned to
+  a non-functional URL; PyPI metadata is per-wheel-immutable, so a new release was
+  required).
+- examples/00_getting_started.ipynb: bump install pin >=1.0.6 → >=1.0.14.
+
+## [1.0.13] - 2026-05-31 — first public PyPI release
 
 ### Added
-- Public release on PyPI: `pip install sablier-flow`.
-- Three executed value-prop notebooks under `examples/`:
-  - `01_backtest_robustness.ipynb` — selection-bias catch via per-strategy `overfit_score`. Demonstrates 29/30 lucky-strategy detection at threshold 0.7 vs 1/12 honest false positives on a 500-strategy pure-noise pool.
+- First public release on PyPI: `pip install sablier-flow`.
+- Four executed notebooks under `examples/` (open them on GitHub to see live numbers):
+  - `00_getting_started.ipynb` — end-to-end SDK tour (login, fit, validate, generate, robustness, async, management).
+  - `01_backtest_robustness.ipynb` — selection-bias catch via per-strategy `overfit_score`. Flags 29/30 lucky strategies at threshold 0.7 vs 1/12 honest false positives on a 500-strategy pure-noise pool.
   - `02_tstr_predictive_rank.ipynb` — Train-on-Synthetic Test-on-Real Spearman ρ = +0.74, 95% CI [+0.55, +0.83] on a 24-variant family.
   - `03_memorization_audit.ipynb` — NN-distance ratio R = 0.9309 vs replay-floor R = 0.0161 (57.8× separation). `memorization_risk = 'low'`.
-- mkdocs-material docs site at https://docs.sablier.ai with the four executed notebooks rendered inline.
+- mkdocs-material docs site at https://docs.sablier.ai with all four notebooks rendered inline.
 - Apache 2.0 license for the SDK; CC BY 4.0 for documentation.
 
 ### Changed
-- Repository visibility: private → public. New canonical URL https://github.com/sablier-ai/sablier-flow.
+- Repository visibility: private → public. Canonical URL https://github.com/sablier-ai/sablier-flow.
 - Memorization audit threshold bands reverted to the empirically-calibrated 0.80 (low) / 0.50 (medium) values appropriate for financial returns.
 
 ### Removed
-- All paper references from SDK docstrings, docs, and notebooks. Every numerical claim now computed live in the notebooks themselves.
+- All paper references from SDK docstrings, docs, and notebooks. Every numerical claim
+  is now computed live in the notebooks themselves.
+
+## [1.0.12] - 2026-05-30 — internal alpha; not publicly announced.
+
+## [1.0.11] - 2026-05-29 — internal alpha; not publicly announced.
+
+## [1.0.10] - 2026-05-28 — internal alpha; not publicly announced.
 
 ## 1.0.9 — Removed (breaking)
 
@@ -314,5 +335,6 @@ release forward.
     - `tests/integration/test_server_end_to_end.py` — Client → HttpxTransport → real FastAPI app via TestClient → GenerationResult.
 - **Demo notebook** `examples/01_alternative_versions.ipynb`.
 
-[Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.13...HEAD
+[Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.14...HEAD
+[1.0.14]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.14
 [1.0.13]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.13
