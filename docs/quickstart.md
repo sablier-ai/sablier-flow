@@ -217,11 +217,7 @@ your laptop ──HTTPS──> Sablier API (Cloud Run) ──Cloud Tasks──> 
 backtester
 ```
 
-**Today's security posture (alpha)**: TLS 1.3 in transit, KMS-encrypted at rest in GCS, one-shot AES-256-GCM symmetric keys wrapped in an X25519 envelope to the worker's ephemeral pubkey, image-digest pinning verified before keys are released. Workers scale to zero between jobs; encrypted blobs are namespaced per `model_id`.
-
-**What's not yet shipped**: AMD SEV-SNP CPU memory encryption + NVIDIA H100 CC mode GPU memory encryption + NRAS attestation chain. Until those land (v0.8, awaiting GCP H100-CC quota), plaintext customer data exists in the Cloud Run worker's RAM during the ~minutes-long training job — meaningfully better than vanilla cloud SaaS, but not yet immune to a privileged GCP insider inspecting that RAM. The SDK's wire protocol is the same one we'll use post-rollout; customer code doesn't change.
-
-See [`SDK.md`](SDK.md#security-posture-today-alpha) for the full posture + roadmap.
+For the full security posture (what's encrypted, what isn't, what's on the roadmap), see [`SDK.md`](SDK.md#security-posture-today-alpha).
 
 ## Try it with the bundled demo dataset — no API key, no network
 
