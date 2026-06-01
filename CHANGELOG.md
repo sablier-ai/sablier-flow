@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.15] - 2026-06-01 — docstring + notebook pin cleanup
+
+### Changed
+- Live notebook numbers refreshed against 1.0.15 (executed cleanly end-to-end):
+  - N1: per-strategy `overfit_score` flags **30/30** lucky strategies vs **0/12** honest false positives at threshold 0.7 (was 29/30 vs 1/12 on 1.0.14 run).
+  - N2: Spearman ρ = +0.78, 95% bootstrap CI [+0.51, +0.93] (was +0.74 on 1.0.14 run).
+  - N3: NN-distance ratio R = 0.9309 (unchanged).
+
+### Fixed
+- `src/sablier_flow/__init__.py` module docstring no longer ships the
+  `data_types={c:'price' for c in df.columns}` pattern that violates the
+  1.0.9 five-type contract — `help(sablier_flow)` and any IDE that surfaces
+  the module docstring now show the same canonical `df.attrs['data_types']`
+  + `like=backtest_window` pattern as the README Quickstart.
+- All four example notebook install pins bumped to >=1.0.15. Notebooks
+  re-executed against a clean 1.0.15 install so docs.sablier.ai/examples/*
+  no longer shows the brief pip-resolve-window error visible on 1.0.14's
+  00_getting_started page.
+
+### Changed
+- README cosmetic refinements: demo dataset date range (2010-2023, actual),
+  TSTR p-value reporting (p ≈ 4e-5 from notebook), LEAN adapter wording
+  ("CSV export adapter" instead of "QuantConnect adapter").
+- GitHub release v1.0.13 title aligned to CHANGELOG ('first public PyPI
+  release', was 'initial public release').
+
 ## [1.0.14] - 2026-06-01 — README fix-pass + PyPI metadata correction
 
 ### Fixed
@@ -335,6 +361,7 @@ release forward.
     - `tests/integration/test_server_end_to_end.py` — Client → HttpxTransport → real FastAPI app via TestClient → GenerationResult.
 - **Demo notebook** `examples/01_alternative_versions.ipynb`.
 
-[Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.14...HEAD
+[Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.15...HEAD
+[1.0.15]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.15
 [1.0.14]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.14
 [1.0.13]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.13

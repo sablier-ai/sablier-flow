@@ -6,14 +6,32 @@ they run inside Sablier's hosted service and are invoked through
 :class:`Client` (or the :func:`fit` / :func:`generate` / :func:`validate`
 module-level shortcuts).
 
-Canonical 5-line workflow::
+Canonical workflow::
 
     import sablier_flow as sf
-    df = your_data  # multivariate time series, DatetimeIndex
-    fit  = sf.fit(df, features=df.columns.tolist(), data_types={c: 'price' for c in df.columns}, horizon=21)
-    gen  = sf.generate(fit.model_id, n_paths=100, like=df.iloc[-21:])
-    synth_results = [my_backtest(d) for d in gen.as_dataframes()]
-    verdict = sf.robustness(my_backtest(df), synth_results, primary_metric='sharpe')
+    import numpy as np
+
+    # 1. Auth
+    sf.login()
+
+    # 2. Your backtest
+    def my_backtest(prices):
+        rets = prices['SPY'].pct_change().dropna()
+        return {'sharpe': float(rets.mean() / rets.std() * np.sqrt(252))} if rets.std() > 0 else {'sharpe': 0.0}
+
+    # 3. Load data + define backtest window
+    df = sf.demo_data()
+    backtest_window = df.iloc[-252:]
+
+    # 4. Fit + generate (with like= for shape match)
+    fit   = sf.fit(df, features=list(df.columns), data_types=df.attrs['data_types'], horizon=252)
+    paths = sf.generate(fit.model_id, n_paths=200, like=backtest_window)
+
+    # 5. Score robustness
+    real   = my_backtest(backtest_window)
+    synth  = [my_backtest(p) for p in paths.as_dataframes()]
+    report = sf.robustness(real, synth, primary_metric='sharpe')
+    print(report.summary())
 
 Public API:
 
@@ -47,7 +65,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "1.0.14"
+__version__ = "1.0.15"
 
 __all__ = [
     "ALLOWED_DATA_TYPES",

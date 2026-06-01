@@ -47,7 +47,7 @@ def my_backtest(prices):
     return {'sharpe': float(rets.mean() / rets.std() * np.sqrt(252))} if rets.std() > 0 else {'sharpe': 0.0}
 
 # 3. Load data — bundled demo or your own DataFrame.
-df = sf.demo_data()                          # SPY/QQQ/IWM/TLT + 3 macro features, 2010-2024
+df = sf.demo_data()                          # SPY/QQQ/IWM/TLT + 3 macro features, 2010-2023
 backtest_window = df.iloc[-252:]             # the slice you'll evaluate
 
 # 4. Train + generate synthetic alternative versions of the backtest window.
@@ -68,8 +68,8 @@ Live empirical demos with executed outputs baked in — open them on GitHub and 
 
 | Notebook | What it proves |
 |---|---|
-| [📓 **Backtest Robustness**](examples/01_backtest_robustness.ipynb) | At the **0.7** `overfit_score` threshold: flags **29 of 30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise search; max honest = 0.725, min lucky = 0.695) vs **1 of 12** false positives on a designed honest family |
-| [📓 **TSTR Predictive Rank**](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.74**, 95% CI **[+0.55, +0.83]**, p < 1e-4 — synth ranks predict real OOS ranks |
+| [📓 **Backtest Robustness**](examples/01_backtest_robustness.ipynb) | At the **0.7** `overfit_score` threshold: flags **30 of 30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise search; max honest = 0.635, max lucky = 0.875) vs **0 of 12** false positives on a designed honest family |
+| [📓 **TSTR Predictive Rank**](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.78**, 95% CI **[+0.51, +0.93]** — synth ranks predict real OOS ranks |
 | [📓 **Memorization Audit**](examples/03_memorization_audit.ipynb) | NN-distance ratio **R = 0.9309** vs replay-floor R = 0.0161 — **57.8× separation**, synth is genuinely new |
 | [📓 **Getting Started**](examples/00_getting_started.ipynb) | End-to-end SDK tour: login → fit → validate → generate → robustness |
 
@@ -78,7 +78,7 @@ Live empirical demos with executed outputs baked in — open them on GitHub and 
 - **One call** trains a model that handles cross-asset dependence, regime structure, and tail behavior — no hand-rolled copulas, no block-length tuning
 - **Per-strategy overfit detection** that classical CSCV-PBO can't surface (selection bias from parameter searches)
 - **Train on synth, deploy on real** — `sf.predictive_rank_score` proves the ranking carries forward, so you don't have to burn real OOS data on strategy selection
-- **Engine-agnostic**: works with pandas, backtrader, vectorbt; LEAN/QuantConnect adapter in 1.0.x
+- **Engine-agnostic**: works with pandas, backtrader, vectorbt; LEAN CSV export adapter included
 
 ## Docs
 
