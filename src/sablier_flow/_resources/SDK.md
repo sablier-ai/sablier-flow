@@ -89,7 +89,7 @@ import sablier_flow as sf
 
 sf.login()                                               # device flow: opens browser, you confirm → ~/.sablier/credentials
 
-real = sf.demo_data()                                    # SPY/QQQ/IWM/TLT + macro, daily 2010-2024
+real = sf.demo_data()                                    # SPY/QQQ/IWM/TLT + macro, daily 2010-2023
 backtest_window = real.loc["2023-01-01":"2024-01-01"]    # the slice you'll evaluate
 
 # `data_types=` is required on every fit / generate / validate call.
@@ -736,8 +736,8 @@ You can also pass a raw `Sequence[float]` as the baseline (e.g., `FamilyReport.s
 ## Demo datasets
 
 ```python
-sf.demo_data()                                       # default: us_equities_macro_2010_2024
-sf.demo_data("us_equities_2010_2024")                # SPY/QQQ/IWM/TLT only, no macros
+sf.demo_data()                                       # default: us_equities_macro_2010_2023
+sf.demo_data("us_equities_2010_2023")                # SPY/QQQ/IWM/TLT only, no macros
 sf.demo_data("us_equities_macro_5min_3mo")           # 5-min intraday — 7 tickers, 3 months
 sf.available_demo_datasets()                         # list all bundled names
 ```
@@ -1003,7 +1003,7 @@ Local helpers (no network):
 
 ```python
 sf.validate_data(real_data) -> None      # raise on schema violations BEFORE the network round-trip
-sf.demo_data(name="us_equities_macro_2010_2024") -> pd.DataFrame
+sf.demo_data(name="us_equities_macro_2010_2023") -> pd.DataFrame
 sf.available_demo_datasets() -> list[str]
 ```
 

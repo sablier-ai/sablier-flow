@@ -12,10 +12,10 @@ The model is the thing that saw the data; the strategy isn't. When the strategy 
 
 Every serious treatment of synthetic data for backtest robustness uses in-sample training:
 
-- **López de Prado & Bailey** — Combinatorially Symmetric Cross-Validation (CSCV), Probability of Backtest Overfitting (PBO), and Deflated Sharpe Ratio all fit models to historical data and generate Monte Carlo paths from the learned distribution to characterize strategy variance.
+- **[López de Prado & Bailey (2014)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253)** — Combinatorially Symmetric Cross-Validation (CSCV), Probability of Backtest Overfitting (PBO), and the [Deflated Sharpe Ratio (Bailey & López de Prado, 2014)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551) all fit models to historical data and generate Monte Carlo paths from the learned distribution to characterize strategy variance.
 
-- **AWS HPC blog (Q3 2024)** — the "Enhancing Equity Strategy Backtesting with Synthetic Data" series uses agent-based models fit to historical equity markets to generate alternative paths for the same period.
-- **TimeGAN / TSGBench / signature-kernel methods** — generative-model evaluations for financial time series train the model on the data being analyzed.
+- **[AWS HPC blog (2024)](https://aws.amazon.com/blogs/hpc/enhancing-equity-strategy-backtesting-with-synthetic-data-part-1-overview-and-toolkit-for-strategy-evaluation/)** — the "Enhancing Equity Strategy Backtesting with Synthetic Data" series uses agent-based models fit to historical equity markets to generate alternative paths for the same period.
+- **[TimeGAN (Yoon, Jarrett, van der Schaar, NeurIPS 2019)](https://proceedings.neurips.cc/paper/2019/hash/c9efe5f26cd17ba6216bbe2a7d26d490-Abstract.html)**, **[TSGBench (Ang et al., VLDB 2024)](https://www.vldb.org/pvldb/vol17/p305-ang.pdf)**, and **signature-kernel methods** (e.g. [Salvi et al., 2020](https://arxiv.org/abs/2006.14794)) — every standard generative-model benchmark for financial time series trains the model on the data being analyzed.
 
 Nobody holds out a separate period to train a generator. The shared methodology across literature and industry is the same: fit, sample, evaluate.
 
@@ -53,16 +53,16 @@ If FLOW's parameters happened to encode "September 17, 2019 had this specific re
 This is a real phenomenon — strong diffusion models on images can memorize and re-emit training samples when capacity vastly exceeds the data manifold. But for financial returns it's structurally unlikely:
 
 1. **Returns space, not raw price levels.** Lower dimensional, fewer addressable points.
-2. **Limited capacity vs data.** ~5M parameters trained on thousands of days × tens-to-hundreds of features. Vision diffusion models that memorize are billions of parameters trained on billions of images — a different regime.
+2. **Limited capacity vs data.** The architecture today is a few-million-parameter conditional flow-matching model trained on thousands of days × tens-to-hundreds of features — small by foundation-model standards. Vision diffusion models that demonstrably memorize are billions of parameters trained on billions of images, a different regime entirely (see e.g. Carlini et al., [Extracting Training Data from Diffusion Models](https://arxiv.org/abs/2301.13188), 2023, which required ≳100M-image scale and explicit attack queries).
 3. **Z-scoring + the model's internal smoothing act as information bottlenecks.** The model can't address training points "by date" — no date input.
 4. **The existing validation suite enforces stylized-fact matching.** A generator that just regurgitated training samples would fail those tests.
 
 To make this empirically verifiable, every `sablier-flow` model reports a **memorization-risk verdict** computed at validation time:
 
-- **NN-distance ratio** = median synthetic-to-training nearest-neighbor distance / median training-to-training nearest-neighbor distance.
-  - `> 0.80` — generator generalizing well (synth distributed through the training manifold at training-like density).
-  - `0.50 – 0.80` — borderline (synth tighter than training; cross-check coverage_*).
-  - `< 0.50` — pathological (synth closer to training than training is to itself). Memorization detected.
+- **NN-distance ratio** = median synthetic-to-training nearest-neighbor distance / median training-to-training nearest-neighbor distance. The SDK reports the raw ratio and a banded verdict:
+  - **`'low'` risk** (verdict): ratio in the `0.85 – 1.15` healthy band — synth distributed through the training manifold at training-like density, near-perfect on the population score.
+  - **`'medium'` risk**: ratio outside that band but above ~0.5 — synth is structurally tighter than training; cross-check **`coverage_*`** (the per-bin empirical-coverage metrics returned alongside, e.g. `coverage_0.5 / coverage_0.9 / coverage_0.95` — fractions of real samples falling inside the corresponding synthetic-quantile intervals).
+  - **`'high'` risk**: ratio < ~0.5 — synth closer to training than training is to itself. Memorization detected.
 
 The full verdict is exposed as `ValidationReport.memorization_risk` ∈ `{"low", "medium", "high"}` on the result of `sf.validate(model_id)`, plus the raw ratio at `ValidationReport.memorization_nn_distance_ratio`. The SDK does not gate `generate(...)` on this verdict — the customer reads it and decides whether to keep using the model, retrain on a smaller in-sample slice, or partition the universe into per-asset-class sub-models. The signal is the falsifiability mechanism; the action is the customer's.
 
@@ -81,4 +81,4 @@ For these customers the recipe is to slice the DataFrame manually and call `sf.f
 | "Isn't training on the same period contamination?" | No — the strategy never sees training data; only new samples from the learned distribution. |
 | "What if the generator memorizes?" | Reported as `ValidationReport.memorization_risk` after `sf.validate(model_id)`; partition large universes or retrain on a smaller slice if `'high'`. |
 | "What about ML-trained strategies?" | Fit FLOW on a window your ML strategy didn't see (`sf.fit(real.loc[:'2018'], ...)`). |
-| "Is this standard?" | Yes — López de Prado, Bailey, AWS, TimeGAN, TSGBench all use in-sample training. |
+| "Is this standard?" | Yes — [López de Prado & Bailey (2014)](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253), [AWS HPC (2024)](https://aws.amazon.com/blogs/hpc/enhancing-equity-strategy-backtesting-with-synthetic-data-part-1-overview-and-toolkit-for-strategy-evaluation/), [TimeGAN (NeurIPS 2019)](https://proceedings.neurips.cc/paper/2019/hash/c9efe5f26cd17ba6216bbe2a7d26d490-Abstract.html), [TSGBench (VLDB 2024)](https://www.vldb.org/pvldb/vol17/p305-ang.pdf) all use in-sample training. |

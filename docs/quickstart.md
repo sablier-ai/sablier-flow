@@ -36,19 +36,33 @@ client = sf.Client()            # no api_key kwarg needed — credentials file d
 
 For CI / containers, set `SABLIER_FLOW_API_KEY=sk_live_...` in the environment instead; the SDK reads env vars before the credentials file. Explicit `api_key=` kwarg always wins.
 
-## 3. The end-to-end loop — canonical 5-line workflow
+## 3. The end-to-end loop — canonical workflow
 
-Copy-pasteable against `sf.demo_data()` or any DataFrame of your own
-(use the demo to see it end-to-end with no setup; swap `df = your_data`
-for `df = pd.read_parquet("my_universe.parquet")` when you're ready).
+Copy-pasteable against `sf.demo_data()` — runs against the hosted API
+with no setup beyond `sf.login()` from step 2:
 
 ```python
+import numpy as np
 import sablier_flow as sf
-df = your_data  # multivariate time series, DatetimeIndex
-fit  = sf.fit(df, features=df.columns.tolist(), data_types=df.attrs['data_types'], horizon=21)
-gen  = sf.generate(fit.model_id, n_paths=100, like=df.iloc[-21:])
+
+df              = sf.demo_data()                       # SPY/QQQ/IWM/TLT + macro, 2010-2023
+backtest_window = df.iloc[-21:]                        # the slice your strategy will evaluate
+
+def my_backtest(prices):                               # YOUR backtest, unchanged
+    rets = prices['SPY'].pct_change().dropna()
+    return {'sharpe': float(rets.mean() / rets.std() * np.sqrt(252))
+            if rets.std() > 0 else 0.0}
+
+fit  = sf.fit(df,
+              features=list(df.columns),
+              data_types=df.attrs['data_types'],       # REQUIRED — per-column annotation
+              horizon=21)
+gen  = sf.generate(fit.model_id, n_paths=100, like=backtest_window)
 synth_results = [my_backtest(d) for d in gen.as_dataframes()]
-verdict = sf.robustness(my_backtest(df), synth_results, primary_metric='sharpe')
+verdict = sf.robustness(my_backtest(backtest_window),  # same 21-bar window on both sides
+                        synth_results,
+                        primary_metric='sharpe')
+print(verdict.summary())
 ```
 
 `gen.as_dataframes()` (see `GenerationResult.as_dataframes`) returns
@@ -57,19 +71,31 @@ the same columns as `df` and (when `like=` was passed) the same index
 shape as the window you handed in — your existing `my_backtest`
 function runs on each `d` unchanged.
 
+> **Symmetric window matters.** Both `my_backtest(backtest_window)` and
+> each `my_backtest(d)` evaluate on the same 21-bar window. Comparing
+> the real Sharpe over the full 3500-bar `df` against synth Sharpes over
+> 21-bar windows is asymmetric and mechanically produces
+> `'highly_overfit'` — a 167× sample-size difference, not a real signal.
+
 The variant below adds `sf.validate(...)` for a cheap OOS structural
 check and uses a longer history + named backtest window — same loop,
-just more explicit:
+just more explicit. Replace `sf.demo_data()` with `pd.read_parquet(...)`
+or any other DataFrame loader when you're ready to use your own data:
 
 ```python
+import numpy as np
 import pandas as pd
 import sablier_flow as sf
 
 real = pd.read_parquet("my_universe.parquet")            # YOUR DataFrame, DatetimeIndex
+real.attrs['data_types'] = {col: 'price' for col in real.columns}    # per-column annotation
 backtest_window = real.loc["2023-01-01":"2024-01-01"]    # the slice you'll evaluate
 
-fit    = sf.fit(real, features=list(real.columns), horizon=252, seed=42)   # trains the joint model
-report = sf.validate(fit.model_id)                                          # cheap OOS check
+fit    = sf.fit(real,
+                features=list(real.columns),
+                data_types=real.attrs['data_types'],
+                horizon=252, seed=42)                    # trains the joint model
+report = sf.validate(fit.model_id)                       # cheap OOS check
 paths  = sf.generate(fit.model_id, n_paths=1000, like=backtest_window)     # synthetic alternative histories
 verdict = sf.robustness(my_backtest(backtest_window),
                         [my_backtest(df) for df in paths.as_dataframes()],
@@ -138,6 +164,25 @@ print(f"90% CI: [{np.percentile(forward_sharpes, 5):+.2f}, "
 A generator that nails the marginals but inverts the strategy ranking is worse than useless for backtesting — a practitioner training a strategy family on it would systematically pick the worst real-market variant. Distributional metrics alone do not catch this. `sf.predictive_rank_score` runs the rank-validity check directly on the customer's own model + strategy family:
 
 ```python
+import numpy as np
+
+# Define your strategy family. >= 20 variants is the recommended floor
+# for a stable Spearman ρ; the demo here uses an SMA-crossover grid.
+def sma_crossover_backtest(df, fast, slow):
+    px = df['SPY']
+    fast_ma = px.rolling(fast).mean()
+    slow_ma = px.rolling(slow).mean()
+    pos  = (fast_ma > slow_ma).shift(1, fill_value=False).astype(int)
+    rets = px.pct_change().fillna(0.0) * pos
+    sharpe = float(rets.mean() / rets.std() * np.sqrt(252)) if rets.std() > 0 else 0.0
+    return {'sharpe': sharpe}
+
+strategies = {
+    f'sma_{fast}_{slow}': (lambda df, f=fast, s=slow: sma_crossover_backtest(df, f, s))
+    for fast in (3, 5, 7, 10, 15, 20)
+    for slow in (20, 30, 50, 100)
+}
+
 # Use the slice sf.fit held out at train time as the OOS reference so the
 # calibration runs on truly unseen data. A naive last-N-row slice would
 # overlap the server's held-out OOS slice (last 20% minus embargo) and
@@ -147,12 +192,13 @@ anchor_end_pos = real.index.get_indexer([real_oos.index[0]])[0]
 ref_anchor     = real.iloc[anchor_end_pos - 200:anchor_end_pos]
 
 forward_paths = sf.generate(fit.model_id, n_paths=200, horizon=len(real_oos),
-                             anchor_data=ref_anchor)
+                             anchor_data=ref_anchor,
+                             data_types=real.attrs['data_types'])
 
-real_sharpes  = {name: bt(real_oos)["sharpe"] for name, bt in strategies.items()}
+real_sharpes  = {name: fn(real_oos)["sharpe"] for name, fn in strategies.items()}
 synth_sharpes = {
-    name: float(np.mean([bt(df)["sharpe"] for df in forward_paths.as_dataframes()]))
-    for name, bt in strategies.items()
+    name: float(np.mean([fn(df)["sharpe"] for df in forward_paths.as_dataframes()]))
+    for name, fn in strategies.items()
 }
 
 score = sf.predictive_rank_score(real_sharpes, synth_sharpes)
@@ -228,18 +274,22 @@ backtester
 
 For the full security posture (what's encrypted, what isn't, what's on the roadmap), see [`SDK.md`](SDK.md#security-posture-today-alpha).
 
-## Try it with the bundled demo dataset — no API key, no network
+## Bundled demo dataset — `sf.demo_data()`
 
 ```python
 import sablier_flow as sf
 
 real = sf.demo_data()                              # daily SPY/QQQ/IWM/TLT + 3 macro series, 2010-2023
-# real = sf.demo_data('us_equities_macro_5min_3mo')  # 5-min intraday alternative
+print(real.shape, real.attrs['data_types'])        # df.attrs carries the per-column annotation
 
-# Continue with sf.fit / sf.generate / sf.validate exactly as in the notebook.
+# 5-min intraday alternative — PREVIEW ONLY. The 1.0.X SDK rejects
+# intraday in sf.fit's frequency check; the dataset ships so you can
+# inspect cadence + the same data_types annotation pattern. Intraday
+# fits light up in 1.1.0.
+# preview = sf.demo_data('us_equities_macro_5min_3mo')
 ```
 
-`sablier_flow.demo_data()` returns a clean aligned `pd.DataFrame` from a parquet bundled inside the wheel. Use it to step through the API surface with no third-party data feed required.
+`sablier_flow.demo_data()` returns a clean aligned `pd.DataFrame` from a parquet bundled inside the wheel — no third-party data feed required. You still need an API key (the `fit`/`generate`/`validate` calls reach the hosted service); the data load itself is offline.
 
 ## What's not in v1.0
 

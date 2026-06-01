@@ -736,8 +736,8 @@ You can also pass a raw `Sequence[float]` as the baseline (e.g., `FamilyReport.s
 ## Demo datasets
 
 ```python
-sf.demo_data()                                       # default: us_equities_macro_2010_2024
-sf.demo_data("us_equities_2010_2024")                # SPY/QQQ/IWM/TLT only, no macros
+sf.demo_data()                                       # default: us_equities_macro_2010_2023
+sf.demo_data("us_equities_2010_2023")                # SPY/QQQ/IWM/TLT only, no macros
 sf.demo_data("us_equities_macro_5min_3mo")           # 5-min intraday — 7 tickers, 3 months
 sf.available_demo_datasets()                         # list all bundled names
 ```
@@ -1013,7 +1013,7 @@ Local helpers (no network):
 
 ```python
 sf.validate_data(real_data) -> None      # raise on schema violations BEFORE the network round-trip
-sf.demo_data(name="us_equities_macro_2010_2024") -> pd.DataFrame
+sf.demo_data(name="us_equities_macro_2010_2023") -> pd.DataFrame
 sf.available_demo_datasets() -> list[str]
 ```
 
@@ -1443,3 +1443,14 @@ The public API follows semantic versioning. Major releases (`X.0.0`) may
 introduce breaking changes; minor (`X.Y.0`) and patch (`X.Y.Z`) releases
 preserve backwards compatibility. The current version is exposed at
 `sablier_flow.__version__`.
+
+**Current release:** **1.0.21** ([PyPI](https://pypi.org/project/sablier-flow/) · [CHANGELOG](https://github.com/sablier-ai/sablier-flow/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/sablier-ai/sablier-flow/releases))
+
+**Recent changes (full history in the CHANGELOG):**
+
+- **1.0.21** — 28 fixes from an adversarial multi-lens audit: CLI `generate` now wires `--data-types`, `LoginResult` / `JobHandle` reprs redact secrets, `endpoint=` kwarg + `SABLIER_FLOW_ENDPOINT` env-var both go through the allowlist (no more `http://` leak), `predictive_rank_score` rejects mixed dict-vs-scalar inputs, Bailey-LdP analytical-DSR units warning, `evaluate_family` dual-routes `data_types` / `api_key` / `frequency` to both fit and generate, `from sablier_flow.adapters import write_lean_csv_universe` now works, `FamilyReport.summary()` leads with `'overfit_selection'` when PBO ≥ 0.6.
+- **1.0.20** — Four co-founder-flagged fixes: `sf.login()` truncates `key_prefix` to 12 chars regardless of what the server sends, `sf.estimate_cost(...)` pops `estimated_duration_s` from the returned dict (heuristic was 4–5× too high), `DeflatedSharpeReport.__format__` routes numeric specs to `.realistic` so `f"{report:.4f}"` no longer crashes, `evaluate_family` emits a `UserWarning` when `len(real_data) != gen.horizon`.
+- **1.0.19** — `Client.generate` / `generate_async` now anchor forward-forecast paths at `anchor_data.iloc[-1]` (was falling back to checkpoint-end, producing a visible ~$90 SPY-level gap on the docs site chart); broad docs sweep removing `client.alternative_versions(...)` (never existed), `MemorizationReport.risk` (real type is `ValidationReport.memorization_risk`), and the never-implemented `strict_oos_mode=True` parameter.
+- **1.0.18** — `__dir__()` on `sablier_flow` so `dir(sf)` returns the full 60-name public surface (was 2 — agent introspection was effectively empty); `estimate_cost` is credits-only (no more bogus wall-clock prediction); `evaluate_family` runtime warning drops the wall-clock seconds figure.
+
+Pin behaviour you care about explicitly. The 1.0.X series is the first production release of the public Python SDK.

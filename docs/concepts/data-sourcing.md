@@ -20,7 +20,7 @@ Customers provide a `pandas.DataFrame` with a `DatetimeIndex`. Each column is on
 
 ```python
 import pandas as pd
-import sablier_flow
+import sablier_flow as sf
 
 # Your data, loaded however you load data today.
 real_data = pd.read_parquet("my_universe_2010_2023.parquet")
@@ -32,14 +32,34 @@ real_data = pd.read_parquet("my_universe_2010_2023.parquet")
 print(real_data.shape)       # (3000, 50) — 3000 rows × 50 features
 print(real_data.dtypes)      # all numeric
 
-import sablier_flow as sf
+# REQUIRED — per-column data-type annotation. sablier-flow uses this to
+# pick the right transform per column (log-return for prices, z-score
+# for rates / volatility / index levels, identity for already-stationary
+# returns). Pure Parquet doesn't carry this — you build it once at the
+# loader, by reading whatever column-semantic mapping your data team
+# already has. Example for a price-only equity panel:
+data_types = {col: 'price' for col in real_data.columns}
+# Or for a mixed panel — annotate per column:
+# data_types = {
+#     'SPY': 'price', 'QQQ': 'price',
+#     'US10Y': 'rate', 'VIX': 'volatility', 'DXY': 'index',
+# }
 
 sf.login()                                      # or set SABLIER_FLOW_API_KEY
-fit  = sf.fit(real_data, features=list(real_data.columns),
-              data_types=real_data.attrs["data_types"], horizon=252)
+fit  = sf.fit(real_data,
+              features=list(real_data.columns),
+              data_types=data_types,
+              horizon=252)
 gen  = sf.generate(fit.model_id, n_paths=1000, like=real_data.iloc[-252:])
 synthetic = gen.as_dataframes()                 # list[pd.DataFrame], one per alt-history
 ```
+
+> **Note on `df.attrs['data_types']`.** The bundled demo dataset
+> (`sf.demo_data()`) ships the annotation pre-attached so you can pass
+> `real_data.attrs['data_types']` straight through in examples. For
+> your own data loaded from Parquet/CSV/SQL, `df.attrs` will be empty —
+> build the dict at the loader as shown above and persist it however
+> you persist column metadata at your firm.
 
 That's it. No schema registration, no field-mapping config, no "please contact our data team."
 
@@ -118,7 +138,7 @@ df = pd.DataFrame({
 
 ### Pattern 5: Your own proprietary alt-data
 
-Whatever you've built — sentiment scores, credit-card panels, satellite-derived inventory features — already lives in some pipeline that produces DataFrames. Plug that into `sf.fit(your_alt_data_df, features=[...], ...)`. The model trains on whatever joint structure you feed it.
+Whatever you've built — sentiment scores, credit-card panels, satellite-derived inventory features — already lives in some pipeline that produces DataFrames. Plug that into `sf.fit(your_alt_data_df, features=list(your_alt_data_df.columns), data_types={c: 'index' for c in your_alt_data_df.columns}, horizon=252)`. Most alt-data series are non-tradeable factor levels — use `data_types='index'` for those (`'rate'` for credit-card APRs, `'price'` only if the series is itself tradeable). The model trains on whatever joint structure you feed it.
 
 ## What sablier-flow does with your DataFrame
 

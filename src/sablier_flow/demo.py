@@ -38,8 +38,8 @@ __all__ = [
 
 
 DemoDatasetName = Literal[
-    "us_equities_2010_2024",
-    "us_equities_macro_2010_2024",
+    "us_equities_2010_2023",
+    "us_equities_macro_2010_2023",
     "us_equities_macro_5min_3mo",
 ]
 
@@ -58,13 +58,13 @@ DemoDatasetName = Literal[
 #   - TNX (10Y constant-maturity yield, %)        -> 'rate'
 #   - DXY (price-weighted dollar-index basket)    -> 'index'
 DEMO_DATA_TYPES: dict[str, dict[str, str]] = {
-    "us_equities_2010_2024": {
+    "us_equities_2010_2023": {
         "SPY": "price",
         "QQQ": "price",
         "IWM": "price",
         "TLT": "price",
     },
-    "us_equities_macro_2010_2024": {
+    "us_equities_macro_2010_2023": {
         "SPY": "price",
         "QQQ": "price",
         "IWM": "price",
@@ -91,13 +91,13 @@ DEMO_DATA_TYPES: dict[str, dict[str, str]] = {
 def available_demo_datasets() -> list[str]:
     """Return the names of bundled demo datasets that ``demo_data`` accepts."""
     return [
-        "us_equities_2010_2024",
-        "us_equities_macro_2010_2024",
+        "us_equities_2010_2023",
+        "us_equities_macro_2010_2023",
         "us_equities_macro_5min_3mo",
     ]
 
 
-def demo_data(name: DemoDatasetName = "us_equities_macro_2010_2024") -> pd.DataFrame:
+def demo_data(name: DemoDatasetName = "us_equities_macro_2010_2023") -> pd.DataFrame:
     """Load a bundled demo DataFrame, no network access required.
 
     Parameters
@@ -105,14 +105,14 @@ def demo_data(name: DemoDatasetName = "us_equities_macro_2010_2024") -> pd.DataF
     name
         Which bundled dataset to load. Available options:
 
-          - ``"us_equities_macro_2010_2024"`` (default) — SPY, QQQ, IWM, TLT
+          - ``"us_equities_macro_2010_2023"`` (default) — SPY, QQQ, IWM, TLT
             equity ETFs + VIX, TNX (10Y yield), DXY (dollar index) macro
             series. 3522 rows × 7 columns, daily, 2010-01-04 → 2023-12-28.
             Recommended starting point because the structural-validation
             metrics need regime context to pass — equity prices alone
             don't carry enough signal for the model to calibrate
             uncertainty.
-          - ``"us_equities_2010_2024"`` — SPY/QQQ/IWM/TLT only, no macros
+          - ``"us_equities_2010_2023"`` — SPY/QQQ/IWM/TLT only, no macros
             (4 columns). Kept for backwards compat / minimal-input demos;
             validate() typically flunks calibration metrics on this set
             because the model has no regime context.

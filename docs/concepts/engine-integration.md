@@ -33,8 +33,10 @@ Zero adapter needed. Synthetic paths come out as DataFrames. Use them.
 ### [backtrader](https://github.com/mementum/backtrader)
 
 ```python
-from sablier_flow.adapters import as_backtrader_feeds  # requires [adapters-backtrader] extra
-feeds = as_backtrader_feeds(synthetic, ticker_column="SPY")
+from sablier_flow.adapters import as_backtrader_feeds   # requires [adapters-backtrader] extra
+# ticker_column must be one of synthetic.feature_names; pick the asset
+# your backtrader strategy trades on.
+feeds = as_backtrader_feeds(synthetic, ticker_column=synthetic.feature_names[0])
 for feed in feeds:
     cerebro = bt.Cerebro()
     cerebro.adddata(feed)
@@ -47,8 +49,9 @@ OHLCV is synthesized from close prices (open=high=low=close, vol=placeholder). I
 ### [vectorbt](https://github.com/polakowo/vectorbt)
 
 ```python
-from sablier_flow.adapters import as_vectorbt_panel  # requires [adapters-vectorbt] extra
-panel = as_vectorbt_panel(synthetic, ticker_column="SPY")
+from sablier_flow.adapters import as_vectorbt_panel    # requires [adapters-vectorbt] extra
+# ticker_column must be one of synthetic.feature_names.
+panel = as_vectorbt_panel(synthetic, ticker_column=synthetic.feature_names[0])
 # panel is a wide DataFrame (T × n_paths)
 pf = vbt.Portfolio.from_signals(panel, entries, exits, freq="D")
 ```
@@ -92,17 +95,29 @@ for i in range(arr.shape[0]):
         f.write(arr[i].astype(np.float64).tobytes())
 ```
 
-Or push directly into your KDB ticker:
+Or push directly into your kdb+ session via PyKX. Convert each path into a `kx.Table` and upsert into a wide synth-paths table; the index column from your `like=` window becomes the timestamp column:
 
 ```python
-import pykx
+import pykx as kx
+import numpy as np
+
+ts = real_data.iloc[-252:].index             # the index your `like=` window used
+feature_names = result.feature_names         # column order matches arr's last axis
+
+# One-time: declare the destination table (empty schema; types inferred on first upsert).
+kx.q('synth_path:([] path_id:`long$(); ts:`timestamp$(); ' +
+     ';'.join(f'{f.lower()}:`float$()' for f in feature_names) + ')')
+
+# Upsert each path as a kx.Table. PyKX's q['name'] handle is the
+# idiomatic way to mutate a named server-side table.
 for i in range(arr.shape[0]):
-    pykx.q("`:synth_path", f"insert", {
-        "ts": real_data.iloc[-252:].index,   # whatever index your `like=` window used
-        "path_id": i,
-        "spy": arr[i, :, 0],
-        "qqq": arr[i, :, 1],
-    })
+    row_dict = {
+        'path_id': np.full(arr.shape[1], i, dtype=np.int64),
+        'ts': ts,
+    }
+    for j, fname in enumerate(feature_names):
+        row_dict[fname.lower()] = arr[i, :, j].astype(np.float64)
+    kx.q['synth_path'].upsert(kx.Table(data=row_dict))
 ```
 
 ## What about engines I haven't heard of?
