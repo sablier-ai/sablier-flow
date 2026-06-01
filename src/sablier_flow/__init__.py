@@ -47,6 +47,25 @@ Post-hoc analytics (client-side, no GPU):
     sablier_flow.evaluate_family          — CSCV across a strategy family
     sablier_flow.probability_of_backtest_overfitting  — PBO directly
     sablier_flow.consistency_check        — live-vs-baseline drift signal
+    sablier_flow.predictive_rank_score    — synth-vs-real rank calibration
+
+Async / job control (kick off long fits, walk away, come back):
+
+    sablier_flow.fit_async                — returns a JobHandle immediately
+    sablier_flow.generate_async           — same, for generation
+    sablier_flow.validate_async           — same, for validation
+    sablier_flow.fetch_result             — block on a handle until the job finishes
+    sablier_flow.list_jobs                — see what's queued / running / done (with live progress)
+    sablier_flow.cancel_job               — cancel by handle or job_id
+    sablier_flow.resume_job               — pick up a handle saved across processes
+    sablier_flow.JobHandle                — serializable handle (``.to_dict()`` / ``.from_dict()``)
+
+Account / billing:
+
+    sablier_flow.whoami                   — current user + org
+    sablier_flow.credits                  — current credit balance
+    sablier_flow.usage / usage_summary    — recent usage events / aggregated
+    sablier_flow.estimate_cost            — deterministic credit estimate for an upcoming job
 
 Demo + attestation helpers:
 
@@ -65,7 +84,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "1.0.17"
+__version__ = "1.0.18"
 
 __all__ = [
     "ALLOWED_DATA_TYPES",
@@ -128,6 +147,17 @@ __all__ = [
     "validate_data",
     "whoami",
 ]
+
+
+def __dir__() -> list[str]:
+    """PEP 562 companion to ``__getattr__`` so ``dir(sablier_flow)`` returns the
+    full public surface instead of only the eagerly-loaded names.
+
+    Without this, tab completion and agent introspection (``dir(sf)``) come back
+    nearly empty because every public symbol is loaded lazily through
+    ``__getattr__``. Returning ``__all__`` makes the SDK self-describing to any
+    caller — humans and Claude Code alike."""
+    return sorted(set(__all__) | set(globals()))
 
 
 def __getattr__(name: str) -> Any:

@@ -372,16 +372,23 @@ def _emit_runtime_estimate_line(
     n_strategy_evals: int,
     seconds: float,
 ) -> None:
-    """Stderr one-liner used by both evaluate_family and PBO."""
+    """Stderr one-liner used by both evaluate_family and PBO.
+
+    Reports the partition count + strategy-evaluation count only.
+    Wall-clock is intentionally omitted because the per-strategy cost
+    depends entirely on what's inside the customer's backtest function
+    (pandas rolling on 252 rows is microseconds; a vectorbt sweep on
+    intraday data is seconds). A printed prediction would be misleading
+    in either direction. The counts let the caller form their own
+    expectation against their per-backtest timing."""
     print(
         f"{where}: ~{n_partitions} partitions, ~{n_strategy_evals} "
-        f"strategy evaluations; estimated wall-clock ~{seconds:.1f} seconds "
-        "(use progress=True for live updates).",
+        "strategy evaluations (use progress=True for live updates).",
         file=sys.stderr,
     )
     if seconds > _LONG_RUNTIME_WARN_SECONDS:
         warnings.warn(
-            f"{where} estimated wall-clock ~{seconds:.1f}s (>{_LONG_RUNTIME_WARN_SECONDS:.0f}s); "
+            f"{where} workload is large ({n_strategy_evals} strategy evaluations); "
             "consider progress=True and/or executor='thread'.",
             UserWarning,
             stacklevel=3,
@@ -444,11 +451,11 @@ def evaluate_family(
     ----------
     Without ``model_id`` this call trains a fresh flow model and
     generates ``n_paths`` paths on top — same cost as a standalone
-    ``sf.fit`` + ``sf.generate`` (typically ~280 credits / ~15 min on
-    L4 for the fit, plus a few credits for the generation). Iterative
-    strategy research should fit once via ``sf.fit`` and then pass
-    ``model_id=fit.model_id`` here to skip the fit on every call,
-    paying only for generation (~2-5 credits).
+    ``sf.fit`` + ``sf.generate``, where the fit step dominates by
+    roughly two orders of magnitude. Iterative strategy research should
+    fit once via ``sf.fit`` and then pass ``model_id=fit.model_id`` here
+    to skip the fit on every call, paying only for generation
+    (a handful of credits per pass).
 
     Parameters
     ----------
@@ -464,8 +471,8 @@ def evaluate_family(
         one. Pass the ``model_id`` returned from a prior ``sf.fit(...)``
         call. When supplied, the fit step is skipped — the function
         goes straight to ``sf.generate(model_id, ...)`` — which saves
-        the dominant cost (~280 cr / ~15 min). Default ``None`` runs a
-        fresh fit on ``real_data``.
+        the dominant cost. Default ``None`` runs a fresh fit on
+        ``real_data``.
     n_paths
         Number of synthetic alternative histories.
     primary_metric
@@ -565,8 +572,8 @@ def evaluate_family(
 
     # --- 2. Generate synthetic alternative histories -------------------
     # Two paths:
-    #   (a) model_id supplied  → reuse a prior fit, pay only generate (~few credits / sub-min)
-    #   (b) model_id is None   → train + generate (full ~280-credit fit + ~15 min)
+    #   (a) model_id supplied  → reuse a prior fit, pay only generate
+    #   (b) model_id is None   → train + generate (the train step dominates the cost)
     # The fit is the dominant cost by a huge margin; iterative research
     # workflows should fit once externally and pass model_id here every
     # subsequent call.

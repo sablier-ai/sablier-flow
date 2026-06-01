@@ -68,7 +68,7 @@ import sablier_flow as sf
 real = pd.read_parquet("my_universe.parquet")            # YOUR DataFrame, DatetimeIndex
 backtest_window = real.loc["2023-01-01":"2024-01-01"]    # the slice you'll evaluate
 
-fit    = sf.fit(real, features=list(real.columns), horizon=252, seed=42)   # ~15 min
+fit    = sf.fit(real, features=list(real.columns), horizon=252, seed=42)   # trains the joint model
 report = sf.validate(fit.model_id)                                          # cheap OOS check
 paths  = sf.generate(fit.model_id, n_paths=1000, like=backtest_window)     # synthetic alternative histories
 verdict = sf.robustness(my_backtest(backtest_window),
@@ -166,7 +166,7 @@ See [`SDK.md`](SDK.md#forward-generation--deployment-forecasting) for the full r
 
 ## 7. Async + cross-process workflows
 
-For long fits (~15 min on L4) you may not want to block the kernel:
+For long fits you may not want to block the kernel:
 
 ```python
 handle = sf.fit_async(real, features=list(real.columns), horizon=252)
@@ -175,6 +175,15 @@ handle = sf.fit_async(real, features=list(real.columns), horizon=252)
 # Later (same or different process):
 fit = sf.fetch_result(handle)
 ```
+
+Check progress at any time from any process:
+
+```python
+sf.list_jobs(limit=10)             # most-recent first; each row has
+                                   # status, progress (dict), last_progress_at
+```
+
+`progress` is a dict like `{'step': N, 'total_steps': M, 'phase': 'training', 'message': '...', 'metrics': {...}}`. `last_progress_at` is the wall-clock heartbeat — useful for detecting a stuck job.
 
 Persist the handle across processes:
 
@@ -236,7 +245,7 @@ real = sf.demo_data()                              # daily SPY/QQQ/IWM/TLT + 3 m
 
 - **Constraints API** — scenario-style stress tests ("what if VIX spends 60 days above 40?") via latent-space optimization. Deferred to v1.1.
 - **Multi-asset beyond equities + macro** — futures, options, credit deferred to v1.5+.
-- **Pre-trained foundation models** — every customer cold-starts training (~10-15 min). Charges ~$1-2 GPU cost per job.
+- **Pre-trained foundation models** — every customer cold-starts training on their own data. Use `sf.estimate_cost('fit', real_data=df, features=cols, horizon=252)` for a deterministic credit estimate.
 - **Survivorship-aware universes** — pre-clean your DataFrame before sending.
 
 ## Next

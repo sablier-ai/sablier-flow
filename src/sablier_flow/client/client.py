@@ -889,9 +889,16 @@ class Client:
         n_features: int | None = None,
         n_rows: int | None = None,
     ) -> dict[str, Any]:
-        """Pre-flight cost estimate for an upcoming job. No GPU is
-        dispatched; the server runs a heuristic formula and returns
-        ``{estimated_credits, low, high, estimated_duration_s, notes}``.
+        """Pre-flight credit estimate for an upcoming job. No GPU is
+        dispatched; the server runs a deterministic formula
+        (``n_features × n_rows × horizon × n_paths`` for the relevant
+        kind) and returns ``{estimated_credits, low, high, notes}``.
+
+        The estimate is for **credits**, not wall-clock time. Wall-clock
+        depends on queue depth, GPU availability and per-job dataset
+        shape, so the SDK does not surface a time prediction — poll
+        :func:`list_jobs` or block with :func:`fetch_result` for the live
+        signal instead.
 
         Parameters
         ----------
@@ -1333,7 +1340,23 @@ class Client:
         ``real_data.index`` when omitted. See :meth:`fit` for the full
         kwarg docs.
 
-        Note:
+        Job control + live progress
+        ---------------------------
+        Once you hold the returned :class:`JobHandle` (or the bare
+        ``handle.job_id``), the SDK exposes everything needed to monitor
+        and steer the job from the same process or a different one:
+
+        - :meth:`fetch_result` — block on the handle until it finishes
+          (polls server-side; default poll budget is generous).
+        - :meth:`list_jobs` — list recent jobs, most-recent first; each
+          entry includes ``status``, ``progress`` (dict with ``step``,
+          ``phase``, ``message``, ``metrics``, ``total_steps``) and
+          ``last_progress_at`` so you can render a heartbeat.
+        - :meth:`cancel_job` — cancel by handle or by ``job_id``.
+        - :func:`sablier_flow.resume_job` — pick up a previously-saved
+          handle from disk after a process restart.
+
+        Persistence note:
             The async path does NOT write a ``~/.sablier/pending_jobs/``
             recovery file — only the sync entrypoints (:meth:`fit` /
             :meth:`generate` / :meth:`validate`) do, which is what
@@ -1395,17 +1418,10 @@ class Client:
         need ``like=``-style indexing, do it yourself after fetch with
         ``result.with_paths_index(your_window.index)``.
 
-        Note:
-            The async path does NOT write a ``~/.sablier/pending_jobs/``
-            recovery file — only the sync entrypoints (:meth:`fit` /
-            :meth:`generate` / :meth:`validate`) do, which is what
-            :meth:`resume` / :func:`sablier_flow.resume_job` read back.
-            Async callers own the lifecycle of the returned
-            :class:`JobHandle`: persist it (``handle.to_dict()`` →
-            ``JobHandle.from_dict()``) if the calling process might die
-            before the TEE finishes, otherwise :meth:`resume_job` cannot
-            recover this job — the one-shot ``result_key`` lives only
-            inside the handle."""
+        See :meth:`fit_async` for the full job-control surface
+        (:meth:`list_jobs` / :meth:`fetch_result` / :meth:`cancel_job` /
+        :func:`sablier_flow.resume_job`) and the handle-persistence
+        contract — identical here."""
         if not model_id:
             raise ValueError("model_id is required")
         _check_generate_n_paths_bounds(n_paths)
@@ -1534,17 +1550,10 @@ class Client:
         optional and auto-detected from ``holdout_data.index`` when
         supplied. See :meth:`validate` for the full kwarg docs.
 
-        Note:
-            The async path does NOT write a ``~/.sablier/pending_jobs/``
-            recovery file — only the sync entrypoints (:meth:`fit` /
-            :meth:`generate` / :meth:`validate`) do, which is what
-            :meth:`resume` / :func:`sablier_flow.resume_job` read back.
-            Async callers own the lifecycle of the returned
-            :class:`JobHandle`: persist it (``handle.to_dict()`` →
-            ``JobHandle.from_dict()``) if the calling process might die
-            before the TEE finishes, otherwise :meth:`resume_job` cannot
-            recover this job — the one-shot ``result_key`` lives only
-            inside the handle."""
+        See :meth:`fit_async` for the full job-control surface
+        (:meth:`list_jobs` / :meth:`fetch_result` / :meth:`cancel_job` /
+        :func:`sablier_flow.resume_job`) and the handle-persistence
+        contract — identical here."""
         if not model_id:
             raise ValueError("model_id is required")
         _check_validate_n_paths_bounds(n_paths)
@@ -3161,7 +3170,17 @@ def fit_async(
     **kwargs: Any,
 ) -> JobHandle:
     """Shortcut for :meth:`Client.fit_async` using a one-shot Client.
-    Same env-var fallbacks as :func:`fit`."""
+    Same env-var fallbacks as :func:`fit`.
+
+    Returns a :class:`JobHandle` immediately. To monitor or finalize the
+    job from anywhere (same process or a different one), use:
+
+        sf.list_jobs()              # status + live progress dict
+        sf.fetch_result(handle)     # block until done
+        sf.cancel_job(handle)       # cancel
+        sf.resume_job(job_id)       # rehydrate by id
+
+    See :meth:`Client.fit_async` for the full kwarg list."""
     client, call_kwargs = _build_client(api_key, kwargs)
     return client.fit_async(real_data, **call_kwargs)
 

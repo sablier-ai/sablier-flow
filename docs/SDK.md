@@ -349,7 +349,7 @@ The synthetic paths inherit the price anchor at `warmup_start` (so they continue
 
 ### Strict `features=` validation
 
-`sf.fit` requires `features=` to match `real_data.columns` exactly when set: every column in `features` must exist in the DataFrame **and** every numeric column in the DataFrame must be listed in `features`. Mismatches raise `ValueError` with a list of the offending names so you can fix them in the call site instead of running a 15-minute fit on the wrong universe.
+`sf.fit` requires `features=` to match `real_data.columns` exactly when set: every column in `features` must exist in the DataFrame **and** every numeric column in the DataFrame must be listed in `features`. Mismatches raise `ValueError` with a list of the offending names so you can fix them in the call site instead of running an expensive fit on the wrong universe.
 
 Pass `features=None` to opt out and fit on every numeric column (no coverage check).
 

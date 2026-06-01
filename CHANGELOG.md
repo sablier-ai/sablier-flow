@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.18] - 2026-06-01 — agent-introspection + honest cost surface
+
+### Added
+- `__dir__()` on `sablier_flow` so `dir(sablier_flow)` returns the full
+  public surface (was 2 names before — PEP 562 lazy `__getattr__` made
+  tab completion + agent introspection effectively empty, leading agents
+  to claim helpers like `list_jobs` / `fetch_result` didn't exist).
+- Module docstring expanded: dedicated "Async / job control" and
+  "Account / billing" sections so `help(sablier_flow)` is a complete
+  reference, not just the canonical happy path.
+- `fit_async` docstring spells out the full job-control surface
+  (`list_jobs` / `fetch_result` / `cancel_job` / `resume_job`) with the
+  shape of the `progress` dict (`step`, `phase`, `message`, `metrics`,
+  `total_steps`) and `last_progress_at` heartbeat. `generate_async` and
+  `validate_async` cross-reference it.
+- `docs/quickstart.md` Section 7 now demos `sf.list_jobs()` for live
+  progress monitoring.
+
+### Changed
+- **`estimate_cost` is now credits-only.** Documented return is
+  `{estimated_credits, low, high, notes}` — `estimated_duration_s` is no
+  longer surfaced. Credit estimates are deterministic (formula based on
+  dataset shape × horizon × n_paths); wall-clock depends on queue depth
+  and GPU availability and is intentionally not predicted. Use
+  `sf.list_jobs()` for the live signal once a job is running. (The
+  underlying wire field is preserved on the response dataclass for
+  back-compat, but downstream callers should ignore it.)
+- `evaluate_family` runtime warning drops "estimated wall-clock ~X
+  seconds" — the per-strategy cost depends on what's inside the
+  customer's backtest function (microseconds to seconds), so a printed
+  prediction was misleading in both directions. The partition count and
+  strategy-evaluation count are still reported so the caller can form
+  their own expectation.
+
+### Fixed
+- Stripped stale "~15 min" / "~15-20 min" / "~10-15 min" wall-clock
+  claims from every customer-facing surface: module docstrings
+  (`analytics/family.py`), `docs/quickstart.md`, `docs/SDK.md`,
+  `src/sablier_flow/_resources/SDK.md`, in-wheel
+  `_resources/getting_started.ipynb` (markdown across cells 1, 10, 14,
+  16, 18, 25, 35, 40 + code cell 41), and the published mirrors at
+  `examples/00_getting_started.ipynb`,
+  `examples/03_memorization_audit.ipynb`, and their `docs/examples/`
+  copies. Existing executed stderr lines from prior runs are kept as
+  historical artifacts; future re-executions will use the cleaned-up
+  warning.
+- In-wheel `getting_started.ipynb` code cells now use attribute access
+  on `CreditsBalance` / `UsageSummary` (`balance.available`,
+  `summary.total_credits`) instead of dict subscripts that would
+  `AttributeError` on the Pydantic objects, and `estimate_cost('fit',
+  ...)` instead of the unsupported `kind='train'`.
+
 ## [1.0.17] - 2026-06-01 — numbers consistency patch
 
 ### Fixed
