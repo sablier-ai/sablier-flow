@@ -89,7 +89,7 @@ import sablier_flow as sf
 
 sf.login()                                               # device flow: opens browser, you confirm → ~/.sablier/credentials
 
-real = sf.demo_data()                                    # SPY/QQQ/IWM/TLT + macro, daily 2010-2024
+real = sf.demo_data()                                    # SPY/QQQ/IWM/TLT + macro, daily 2010-2023
 backtest_window = real.loc["2023-01-01":"2024-01-01"]    # the slice you'll evaluate
 
 # `data_types=` is required on every fit / generate / validate call.

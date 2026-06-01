@@ -64,14 +64,14 @@ print(report.summary())
 
 ## Examples
 
-Live empirical demos with executed outputs baked in — open them on GitHub and see the numbers immediately:
+Live empirical demos with executed outputs baked in. **Preview** links go to the rendered notebooks on the docs site (always works); **source** links go to the raw `.ipynb` on GitHub (clone, download, or — when GitHub's notebook viewer is operating — render inline). [Why two links?](examples/README.md)
 
-| Notebook | What it proves |
-|---|---|
-| [📓 **Backtest Robustness**](examples/01_backtest_robustness.ipynb) | At the **0.7** `overfit_score` threshold: flags **29 of 30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise pool; lucky family min = 0.670, max = 0.875) vs **0 of 12** false positives on a designed honest family (max = 0.690) |
-| [📓 **TSTR Predictive Rank**](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.7687**, 95% bootstrap CI **[+0.47, +0.95]**, p = 1.1e-05, n = 24 — synth ranks predict real OOS ranks |
-| [📓 **Memorization Audit**](examples/03_memorization_audit.ipynb) | NN-distance ratio **R = 0.9312** vs replay-floor R = 0.0161 — **57.8× separation**, synth is genuinely new |
-| [📓 **Getting Started**](examples/00_getting_started.ipynb) | End-to-end SDK tour: login → fit → validate → generate → robustness |
+| Notebook | Preview | Source | What it proves |
+|---|---|---|---|
+| **Backtest Robustness** | [docs.sablier.ai](https://docs.sablier.ai/examples/01_backtest_robustness/) | [`.ipynb`](examples/01_backtest_robustness.ipynb) | At the **0.7** `overfit_score` threshold: flags **29 of 30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise pool; lucky family min = 0.670, max = 0.875) vs **0 of 12** false positives on a designed honest family (max = 0.690) |
+| **TSTR Predictive Rank** | [docs.sablier.ai](https://docs.sablier.ai/examples/02_tstr_predictive_rank/) | [`.ipynb`](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.7687**, 95% bootstrap CI **[+0.47, +0.95]**, p = 1.1e-05, n = 24 — synth ranks predict real OOS ranks |
+| **Memorization Audit** | [docs.sablier.ai](https://docs.sablier.ai/examples/03_memorization_audit/) | [`.ipynb`](examples/03_memorization_audit.ipynb) | NN-distance ratio **R = 0.9312** vs replay-floor R = 0.0161 — **57.8× separation**, synth is genuinely new |
+| **Getting Started** | [docs.sablier.ai](https://docs.sablier.ai/examples/00_getting_started/) | [`.ipynb`](examples/00_getting_started.ipynb) | End-to-end SDK tour: login → fit → validate → generate → robustness |
 
 ## Why use it
 

@@ -29,6 +29,15 @@ print(verdict.summary())
 - **[Recipes](recipes.md)** — copy-pasteable patterns for common quant workflows
 - **[Concepts](concepts/index.md)** — why in-sample training is correct, what predictive validity means, data sourcing, engine integration
 
+## Worked examples — empirical demos with executed outputs
+
+Each notebook ships with a download link at the top — click it to grab the `.ipynb` and run it locally against your account.
+
+- **[Getting started](examples/00_getting_started.ipynb)** — end-to-end SDK tour: login → fit → validate → generate → robustness → forward forecast
+- **[Backtest robustness](examples/01_backtest_robustness.ipynb)** — at the **0.7** `overfit_score` threshold, flags **29 of 30** selection-biased lucky strategies vs **0 of 12** honest false positives
+- **[TSTR predictive rank](examples/02_tstr_predictive_rank.ipynb)** — Spearman ρ = **+0.7687**, 95% CI [+0.47, +0.95], p = 1.1e-05, n = 24
+- **[Memorization audit](examples/03_memorization_audit.ipynb)** — NN-distance ratio **R = 0.93** vs replay-floor R = 0.02 (57.8× separation)
+
 ## What's distinctive
 
 Synthetic financial paths have a two-axis quality definition: **distributional fidelity AND predictive-rank validity**. A generator that nails the marginals but inverts the strategy ranking is worse than useless for backtesting — a practitioner training a strategy family on it would systematically pick the worst real-market variant. The distributional metric suite alone does not catch this.

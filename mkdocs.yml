@@ -10,7 +10,7 @@ edit_uri: edit/main/docs/
 theme:
   name: material
   logo: assets/logo.svg
-  favicon: assets/favicon.svg
+  favicon: assets/favicon.ico
   features:
     - navigation.tabs
     - navigation.sections
@@ -49,6 +49,9 @@ extra:
     - icon: fontawesome/solid/envelope
       link: mailto:team@sablier.it
       name: team@sablier.it
+
+extra_css:
+  - assets/extra.css
 
 nav:
   - Home: index.md

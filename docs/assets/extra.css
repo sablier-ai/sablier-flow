@@ -1,0 +1,50 @@
+/* Defensive overrides — notebooks embed standalone HTML reports
+ * (via `display(HTML(...))`) whose own `<style>` blocks set
+ * `body { max-width: 760px; padding: 32px; background: #f8fafc }`,
+ * which then poisons the Material layout and squeezes the page.
+ * Re-assert Material's expected box on the body so embedded reports
+ * cannot constrain the page.
+ */
+body {
+  max-width: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: var(--md-default-bg-color) !important;
+  color: var(--md-default-fg-color) !important;
+  font-family: var(--md-text-font-family,
+    "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif) !important;
+}
+
+/* mkdocs-jupyter wraps notebook content in `.jupyter-wrapper`. Keep
+ * the notebook's typography inside that wrapper, but don't let it cap
+ * width or paint a different background outside it. */
+.jupyter-wrapper {
+  background: transparent !important;
+}
+
+.jupyter-wrapper .jp-Notebook {
+  max-width: none !important;
+  padding: 0 !important;
+}
+
+/* mkdocs-jupyter inserts plotly/matplotlib images at very wide sizes.
+ * Cap them to the article width so they don't blow out the column. */
+.jupyter-wrapper .jp-OutputArea-output img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Notebook download banner — make it visually distinct */
+.notebook-download-banner {
+  padding: 0.8rem 1rem;
+  margin: 0 0 1.5rem 0;
+  border-left: 4px solid var(--md-accent-fg-color);
+  background: var(--md-code-bg-color);
+  border-radius: 0.2rem;
+  font-size: 0.85rem;
+}
+.notebook-download-banner code {
+  background: transparent;
+  padding: 0;
+}

@@ -8,7 +8,7 @@ Below are the canonical snippets for the data layers real quant desks actually u
 >
 > ```python
 > import sablier_flow
-> df = sablier_flow.demo_data()   # SPY/QQQ/IWM/TLT, 2010-2024, ~99 KB, no network
+> df = sablier_flow.demo_data()   # SPY/QQQ/IWM/TLT + 3 macro features (VIX, TNX, DXY), 2010-2023, no network
 > ```
 
 ---
