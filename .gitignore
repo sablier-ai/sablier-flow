@@ -119,3 +119,6 @@ sma_crossover_audit.html
 
 # Notebooks are sourced from examples/ and copied to docs/examples/ at build time
 docs/examples/
+
+# Local backtest audit artifact
+examples/audit.html
