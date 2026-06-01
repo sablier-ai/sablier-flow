@@ -160,10 +160,33 @@ def _write_credentials_blob(data: dict[str, dict[str, Any]]) -> None:
     # Write atomically: temp + rename so a half-written file can never
     # leave the loader confused. mode 0600 because the api_key lives
     # here in cleartext.
+    #
+    # 1.0.21 — open the tmp file with O_CREAT | O_EXCL and mode 0o600
+    # BEFORE any bytes are written. The previous flow created the file
+    # at default umask (typically 0o644 = world-readable) and chmod'd
+    # it AFTER the json.dump, so the cleartext api_key was readable by
+    # any local user for the duration of the write window. The
+    # tmp-then-rename atomicity guarantee is preserved.
     tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w") as fh:
-        json.dump(data, fh, indent=2, sort_keys=True)
-    os.chmod(tmp, 0o600)
+    # Remove any leftover tmp from a previous crashed write so the
+    # O_EXCL doesn't trip.
+    try:
+        os.unlink(tmp)
+    except FileNotFoundError:
+        pass
+    fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(data, fh, indent=2, sort_keys=True)
+    except Exception:
+        # If json.dump raises mid-write, leave the empty tmp file
+        # behind so the next attempt's O_EXCL doesn't silently overwrite
+        # a partial write that might somehow still be useful for debugging.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     tmp.replace(path)
 
 
@@ -250,13 +273,30 @@ def clear_credentials(profile: str = DEFAULT_PROFILE) -> bool:
 
 @dataclass(frozen=True)
 class LoginResult:
-    """Returned by :func:`login` — what got stored on disk."""
+    """Returned by :func:`login` — what got stored on disk.
+
+    Custom ``__repr__`` truncates ``api_key`` to the canonical 12-char
+    prefix so ``r = sf.login(); r`` in a notebook does NOT persist the
+    full ``sk_live_`` secret into the ``.ipynb`` on disk (1.0.21
+    follow-up to the print-side truncation already in :func:`login`).
+    """
 
     api_key: str
     key_id: str | None
     key_prefix: str | None
     endpoint: str
     profile: str
+
+    def __repr__(self) -> str:
+        # Mirror the 12-char truncation used in the login() print line;
+        # never let the full api_key out via repr / logger.info('%r', ...) /
+        # traceback frame-locals / Jupyter cell-output persistence.
+        safe = (self.api_key or "")[:12] + "..."
+        return (
+            f"LoginResult(api_key={safe!r}, key_id={self.key_id!r}, "
+            f"key_prefix={self.key_prefix!r}, endpoint={self.endpoint!r}, "
+            f"profile={self.profile!r})"
+        )
 
 
 def login(

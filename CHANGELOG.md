@@ -7,6 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.21] - 2026-06-01 — 28 fixes from adversarial multi-lens audit
+
+A multi-agent audit (security / ergonomics / docs-vs-reality / methodology /
+error-paths lenses, with adversarial verification) surfaced 28 confirmed
+issues. The bigger ones below; full punch list in the commit body.
+
+### Fixed — critical
+- **`sablier-flow generate` CLI was dead on arrival.** The CLI parser had
+  no `--data-types` flag and the handler called `Client.fit()` without
+  it, so every CLI run hit `TypeError: data_types= is required` before
+  any network call. Added `--data-types` accepting JSON
+  (`--data-types '{"SPY":"price"}'`) or comma-pair form
+  (`--data-types 'SPY=price,VIX=volatility'`) with a fallback to
+  `df.attrs['data_types']` when the input Parquet carries the annotation.
+
+### Fixed — security
+- **`LoginResult.__repr__` no longer leaks the full `sk_live_` key.**
+  Default dataclass repr emitted the entire api_key verbatim — typing
+  `r = sf.login(); r` in a Jupyter cell wrote it into the `.ipynb` on
+  disk. Custom `__repr__` truncates to the 12-char prefix.
+- **`JobHandle.__repr__` no longer leaks the AES-256-GCM `result_key_b64`.**
+  Same dataclass-repr footgun: `print(handle)` / `logger.info('%r', handle)`
+  surfaced the one-shot key that decrypts the TEE-side result. Custom
+  `__repr__` redacts. `to_dict()` still serializes the key intentionally
+  for cross-process resume.
+- **Credentials tempfile now opens with `O_CREAT | O_EXCL | 0o600`** before
+  any bytes are written. Previously the file was created at the default
+  umask (0o644 = world-readable on most setups) and chmod'd to 0o600
+  *after* `json.dump`, so the cleartext api_key was readable by any local
+  user during the write window.
+- **`endpoint=` kwarg + `SABLIER_FLOW_ENDPOINT` env var now go through the
+  same allowlist** the stored credentials file uses. Previously both
+  paths bypassed `validate_stored_endpoint`, so
+  `Client(endpoint='http://evil.example.com/v1', api_key=...)` would
+  happily ship the key in cleartext to an unvetted host. Now refuses
+  with `ValueError` at construction.
+
+### Fixed — methodology / silent wrong-answer
+- **`predictive_rank_score` rejects mixed input forms.** Passing real as
+  `{name: {sharpe: X}}` and synth as `{name: scalar}` used to silently
+  produce a "well_calibrated on sharpe" verdict even when the scalar
+  was actually mean-return — gating deploy decisions on a mislabeled
+  rank correlation. Now raises ValueError naming the mismatch.
+- **Bailey-LdP analytical DSR warns on units mismatch.** The variance
+  formula `Var(SR) ≈ (1 - γ₃·SR + ((γ₄-1)/4)·SR²)/(T-1)` requires the
+  Sharpe in the same units as the returns used to derive γ₃ / γ₄.
+  Passing an annualized SR with per-period (daily) returns produced
+  silently wrong analytical numbers ~3-5× off. Now emits a UserWarning
+  when `t_obs > 60` and `|observed_sr| > 3.5` (the typical annualized-
+  with-daily-returns signature).
+- **DSR refuses NaN `observed_sr`.** Previously NaN comparison made
+  `np.mean(synth <= NaN) = 0.0` → realistic DSR silently came back as
+  0.0 "looks_like_noise". Now raises ValueError pointing at the likely
+  cause (zero-variance strategy returns).
+- **DSR reports effective N when synth has non-finite values.** Added
+  a `notes` field on `DeflatedSharpeReport` that records how many
+  paths were dropped before computing DSR. If 200 of 1000 synth Sharpes
+  came back NaN (e.g. zero-vol windows), the report now says so.
+- **DSR `t_obs=252` fallback now visible in notes.** When called without
+  `strategy_returns`, the analytical DSR assumes one year of daily
+  observations; the report's `notes` now spells this out so customers
+  don't read `analytical` as directly comparable to `realistic` when
+  their actual horizon is wildly different.
+- **DSR `_NULL_SOURCE_WARNED` module global removed.** The first call
+  in a process silenced every subsequent call to the same warning,
+  including completely unrelated ones. Python's default warning filter
+  dedupes by call-site source line, which is the correct granularity
+  here.
+- **`FamilyReport.summary()` now leads with `'overfit_selection'`** when
+  PBO ≥ 0.6 instead of cheerfully reporting "Significant" first and
+  then appending the PBO as a footnote. The summary now matches what
+  `report.verdict` says.
+- **`probability_of_backtest_overfitting` warns on chunk_size < 30**
+  and surfaces partition-skip rate. Default `cscv_splits=16` plus
+  short `real_data` produced ~4-row chunks that broke most rolling
+  backtests; the SDK now flags this and reports `n_skipped_nonfinite`
+  explicitly.
+- **`evaluate_family` kwarg routing fixed.** Previously `data_types`,
+  `api_key`, `endpoint`, `verify`, `attestation_mode`, `profile`,
+  `cache_dir`, `pinned_image_digest`, `frequency` were routed only
+  to the generate side — so cold-start callers passing `data_types=`
+  and `api_key=` to `evaluate_family(...)` crashed in `_fit()` before
+  any synth round-trip. Now dual-routed: fit and generate both see
+  the kwargs they need.
+
+### Fixed — ergonomics + docs
+- **`from sablier_flow.adapters import write_lean_csv_universe`** now
+  works (was `ImportError`).
+- **`Client.resume()` clears the pending-job file on terminal failure**
+  too, not only success. Previously a `RemoteJobError` left a stale
+  `.json` in `~/.sablier/pending_jobs/` that future `resume()` calls
+  would keep polling forever.
+- **`consistency_check(...)` handles `FamilyReport` as baseline.**
+  Previously it fell through to the raw-sequence branch and silently
+  coerced the dataclass into 0-D garbage; now routes
+  `FamilyReport.synthetic_max_values` correctly.
+- **`SDK.md` signatures for `Client.fit / generate / validate` now show
+  `data_types=` (required), `frequency=`, and `quiet=`** — they were
+  omitted, contradicting the actual signatures. `JobHandle.kind` enum
+  fixed from `'train'` → `'fit'` in two places.
+- **SDK.md credits/usage return types corrected** from `dict[str, Any]`
+  to the actual Pydantic types (`CreditsBalance`, `UsageSummary`,
+  `UsageEvent`).
+- **Six broken TOC anchors in SDK.md fixed** (slugify mismatch — the
+  double-dash anchors don't match python-markdown's auto-generated
+  single-dash slugs).
+- **`GenerationResult.as_dataframes` canonical recipe** rewritten to
+  pass the SAME window to both `my_backtest(backtest_window)` and the
+  synth list. The pre-1.0.21 example asymmetrically passed the full
+  `df` (3500 bars) on the real side and 21-bar synth windows on the
+  other — guaranteed to produce `'highly_overfit'`. Added an explicit
+  warning admonition explaining why.
+- **`predictive_rank_score` docstring example** now uses per-strategy
+  `fn(real_oos)` instead of a single `my_backtest(real_oos)` shared
+  across strategies — the old example crashed with the zero-variance
+  ValueError documented in the same docstring's "Raises" section.
+- **`@sablier_flow.augment` and `alternative_versions` references**
+  swept from `demo.py`, `family.py`, `consistency.py`. The names
+  refer to surface that was deleted before 1.0; customers copying
+  the snippets got `AttributeError`.
+- **`FamilyReport.to_html` doc removed** from family.py module
+  docstring (the method doesn't exist; `summary()` is the right
+  reference).
+
 ## [1.0.20] - 2026-06-01 — four ergonomics + safety fixes from co-founder feedback
 
 ### Security

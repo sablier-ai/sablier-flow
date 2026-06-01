@@ -31,12 +31,12 @@ Two additional outputs surface for serious quants:
 - [Installation](#installation)
 - [Authentication](#authentication) — `sf.login()` / env / `~/.sablier/credentials`
 - [Security posture today (alpha)](#security-posture-today-alpha)
-- [The workflow: `fit` → `generate` → `validate`](#the-workflow-fit--generate--validate)
-  - [Schema contract](#schema-contract--what-real_data-must-look-like)
-  - [Strict `features=` validation](#strict-features-validation-071)
-  - [Async jobs (`fit_async` / `fetch_result` / `list_jobs` / `cancel_job`)](#async-jobs--fit_async--fetch_result--list_jobs--cancel_job)
-- [Forward generation — deployment forecasting](#forward-generation--deployment-forecasting)
-  - [Predictive validity (`sf.predictive_rank_score`)](#predictive-validity--sfpredictive_rank_score)
+- [The workflow: `fit` → `generate` → `validate`](#the-workflow-fit-generate-validate)
+  - [Schema contract](#schema-contract-what-real_data-must-look-like)
+  - [Strict `features=` validation](#strict-features-validation)
+  - [Async jobs (`fit_async` / `fetch_result` / `list_jobs` / `cancel_job`)](#async-jobs-fit_async-fetch_result-list_jobs-cancel_job)
+- [Forward generation — deployment forecasting](#forward-generation-deployment-forecasting)
+  - [Predictive validity (`sf.predictive_rank_score`)](#predictive-validity-sfpredictive_rank_score)
 - [Strategy families and parameter sweeps](#strategy-families-and-parameter-sweeps)
 - [Interpreting the output](#interpreting-the-output)
   - [Verdict](#verdict)
@@ -882,12 +882,14 @@ Methods:
 Client.fit(
     real_data: pd.DataFrame,
     *,
+    data_types: dict[str, str],               # REQUIRED — per-column annotation: 'price' | 'return' | 'rate' | 'index' | 'volatility'
     features: Sequence[str] | None = None,    # default: every numeric column of real_data
-    frequency: str | None = None,             # 'daily' | 'intraday' | 'weekly' | 'monthly' | pandas offset alias
+    frequency: str | None = None,             # 'daily' | 'weekly' | 'monthly' | 'quarterly' (intraday deferred to 1.1.0)
     horizon: int | None = None,
     train_split: float | None = 0.8,          # set to None to skip the OOS split
     embargo_days: int = 21,
     seed: int | None = None,
+    quiet: bool = False,                      # suppress the stderr cost-estimate / actual-cost lines
     idempotency_key: str | None = None,
 ) -> FitResult
 
@@ -898,7 +900,10 @@ Client.generate(
     horizon: int | None = None,               # any length; defaults to training horizon
     anchor_data: pd.DataFrame | None = None,  # None → use server-stored training tail
     like: pd.DataFrame | None = None,         # convenience: derive horizon + index + anchor from this window
+    data_types: dict[str, str] | None = None, # required when `like=` or `anchor_data=` is set (carries fresh data)
+    frequency: str | None = None,
     seed: int | None = None,
+    quiet: bool = False,
     idempotency_key: str | None = None,
 ) -> GenerationResult
 
@@ -906,8 +911,11 @@ Client.validate(
     model_id: str,
     *,
     holdout_data: pd.DataFrame | None = None, # None → use the OOS slice persisted at fit time
+    data_types: dict[str, str] | None = None, # required when holdout_data is set
+    frequency: str | None = None,
     n_paths: int = 500,
     seed: int | None = None,
+    quiet: bool = False,
     idempotency_key: str | None = None,
 ) -> ValidationReport
 
@@ -993,10 +1001,12 @@ Account / pre-flight:
 ```python
 sf.ping(*, api_key=None, **kw)         -> dict[str, Any]
 sf.whoami(*, api_key=None, **kw)       -> dict[str, Any]
-sf.credits(*, api_key=None, **kw)      -> dict[str, Any]
-sf.usage(*, since=None, until=None, kind=None, limit=100, api_key=None, **kw) -> list[dict]
-sf.usage_summary(*, period="month", api_key=None, **kw) -> dict[str, Any]
-sf.estimate_cost(kind, *, real_data=None, features=None, horizon=None, n_paths=None, api_key=None, **kw) -> dict[str, Any]
+sf.credits(*, api_key=None, **kw)      -> CreditsBalance      # Pydantic — use attribute access (balance.available, .monthly_used, ...)
+sf.usage(*, since=None, until=None, kind=None, limit=100, api_key=None, **kw) -> list[UsageEvent]
+sf.usage_summary(*, period="month", api_key=None, **kw) -> UsageSummary   # Pydantic — summary.total_credits, .by_kind, ...
+sf.estimate_cost(kind, *, real_data=None, features=None, horizon=None, n_paths=None, n_features=None, n_rows=None, api_key=None, **kw) -> dict[str, Any]
+    # Returns {estimated_credits, low, high, notes}. Wall-clock duration is NOT returned (see 1.0.20 changelog).
+    # `kind` must be one of 'fit' | 'generate' | 'validate' — 'train' is rejected since 1.0.18.
 ```
 
 Local helpers (no network):

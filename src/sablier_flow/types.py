@@ -173,8 +173,26 @@ class JobHandle:
                 f"got {self.kind!r}"
             )
 
+    def __repr__(self) -> str:
+        """Redact ``result_key_b64`` so ``print(handle)`` / ``%r`` /
+        ``logger.info('%r', handle)`` / Jupyter cell-output persistence
+        do NOT leak the one-shot AES-256-GCM key that decrypts the
+        TEE-side result. Anyone holding the cleartext key plus the
+        ``job_id`` can fetch and decrypt the customer's synthetic-paths
+        result. Use :meth:`to_dict` explicitly when you actually need to
+        cross-process the handle (1.0.21)."""
+        return (
+            f"JobHandle(job_id={self.job_id!r}, kind={self.kind!r}, "
+            f"result_key_b64=<redacted-len={len(self.result_key_b64)}>)"
+        )
+
     def to_dict(self) -> dict[str, str]:
-        """Serialize to a plain dict (e.g. for JSON persistence)."""
+        """Serialize to a plain dict (e.g. for JSON persistence).
+
+        Includes ``result_key_b64`` in cleartext — this is intentional
+        because cross-process resume requires it. Persist to a file with
+        mode 0600 and treat the bytes the same way you would treat the
+        API key itself."""
         return {"job_id": self.job_id, "kind": self.kind, "result_key_b64": self.result_key_b64}
 
     @classmethod
@@ -650,20 +668,32 @@ class GenerationResult:
         RangeIndex if neither is set. Promote-from-adapter — equivalent
         to ``sablier_flow.adapters.as_dataframes(self, index=index)``.
 
-        Canonical recipe — the one-liner that feeds your backtest::
+        Canonical recipe — feed your backtest the SAME window on both
+        the real and the synthetic side::
 
             import sablier_flow as sf
+            backtest_window = df.iloc[-21:]                 # ← the slice you'll evaluate
             fit  = sf.fit(df, features=df.columns.tolist(),
                           data_types={c: 'price' for c in df.columns},
                           horizon=21)
-            gen  = sf.generate(fit.model_id, n_paths=100, like=df.iloc[-21:])
+            gen  = sf.generate(fit.model_id, n_paths=100, like=backtest_window)
             synth_results = [my_backtest(d) for d in gen.as_dataframes()]
-            verdict = sf.robustness(my_backtest(df), synth_results,
-                                    primary_metric='sharpe')
+            verdict = sf.robustness(
+                my_backtest(backtest_window),               # ← real Sharpe on the SAME 21-bar window
+                synth_results,                              # ← synth Sharpes on 21-bar windows
+                primary_metric='sharpe',
+            )
 
         Each ``d`` is a ``pd.DataFrame`` with the same columns / index
         shape as the slice you passed to ``like=``; your existing
         backtest function runs on it unchanged.
+
+        .. warning::
+           Pass the SAME window to both sides — ``my_backtest(df)`` over
+           the full 3500-bar series compared against ``my_backtest(d)``
+           over 21-bar synth windows is asymmetric and mechanically
+           produces ``'highly_overfit'`` because the real Sharpe is
+           computed on 167× more data than the synth Sharpes.
         """
         from sablier_flow.adapters.dataframe import as_dataframes
         effective = index if index is not None else self.paths_index

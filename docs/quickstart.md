@@ -162,7 +162,7 @@ print(score.verdict)   # 'well_calibrated' | 'weakly_calibrated' | 'uncalibrated
 
 If `score.verdict == "inverted"`, do not deploy on the forward-forecast ranking — the model is misranking strategies on your universe.
 
-See [`SDK.md`](SDK.md#forward-generation--deployment-forecasting) for the full recipe + caveats.
+See [`SDK.md`](SDK.md#forward-generation-deployment-forecasting) for the full recipe + caveats.
 
 ## 7. Async + cross-process workflows
 

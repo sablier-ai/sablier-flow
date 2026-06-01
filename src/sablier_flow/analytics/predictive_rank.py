@@ -223,6 +223,25 @@ def _extract_primary(
     resolved = primary_metric
     for name, value in results.items():
         if isinstance(value, (int, float, np.floating, np.integer)):
+            # 1.0.21 — reject mixed forms. If primary_metric was already
+            # resolved to a non-"value" key (e.g. 'sharpe' from the other
+            # side passed in as dict-form), a scalar here means we have
+            # no way to verify the scalar actually represents that metric
+            # — the rank correlation would silently compare Sharpe-real
+            # against (say) mean-return-synth, but the report would label
+            # the result 'well_calibrated on sharpe'. Force the caller
+            # to use matching forms on both sides.
+            if resolved is not None and resolved != "value":
+                raise ValueError(
+                    f"strategy {name!r} value is a scalar ({float(value)}), but "
+                    f"primary_metric={resolved!r} was resolved from the other "
+                    f"side (real_results / synth_results) or via the kwarg. "
+                    f"Pass both sides in matching form: either both as "
+                    f"scalars (primary_metric will default to 'value'), or "
+                    f"both as dicts with {resolved!r} as a key. Mixing forms "
+                    f"silently labels the rank correlation with the wrong "
+                    f"metric name."
+                )
             out[str(name)] = float(value)
             if resolved is None:
                 resolved = "value"
@@ -311,11 +330,14 @@ def predictive_rank_score(
 
     Examples
     --------
-    Sharpe-on-real vs Sharpe-on-synth-forward, scalar form::
+    Sharpe-on-real vs Sharpe-on-synth-forward, scalar form. Note the
+    per-strategy ``fn`` — calling ``my_backtest`` on every name with no
+    per-strategy parameters gives every strategy the same Sharpe and
+    triggers the zero-variance ValueError documented above::
 
-        real_sharpes  = {name: my_backtest(real_oos)['sharpe']  for name, fn in strategies.items()}
+        real_sharpes  = {name: fn(real_oos)['sharpe'] for name, fn in strategies.items()}
         synth_sharpes = {
-            name: np.mean([my_backtest(df)['sharpe'] for df in forward_paths.as_dataframes()])
+            name: float(np.mean([fn(df)['sharpe'] for df in forward_paths.as_dataframes()]))
             for name, fn in strategies.items()
         }
         score = sf.predictive_rank_score(real_sharpes, synth_sharpes)
@@ -323,8 +345,12 @@ def predictive_rank_score(
 
     Multi-metric form — pick which metric to rank on::
 
-        real_full  = {name: my_backtest(real_oos)              for name, fn in strategies.items()}
-        synth_full = {name: my_backtest_mean(forward_paths)    for name, fn in strategies.items()}
+        real_full  = {name: fn(real_oos)                       for name, fn in strategies.items()}
+        synth_full = {
+            name: {k: float(np.mean([fn(df)[k] for df in forward_paths.as_dataframes()]))
+                   for k in ('sharpe', 'sortino')}
+            for name, fn in strategies.items()
+        }
         score = sf.predictive_rank_score(real_full, synth_full, primary_metric='sortino')
     """
     try:

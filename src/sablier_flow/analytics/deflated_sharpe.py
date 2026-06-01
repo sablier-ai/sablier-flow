@@ -126,6 +126,14 @@ class DeflatedSharpeReport:
     """The observed SR needed for analytical DSR = 0.95 — the
     closed-form Bailey-LdP threshold."""
 
+    notes: tuple[str, ...] = ()
+    """Caveats that affected this report — e.g. how many non-finite
+    synthetic Sharpes were dropped before computing DSR, or that the
+    analytical DSR was computed under a default ``t_obs=252`` assumption
+    when no ``strategy_returns`` was supplied. Empty in the typical
+    happy-path case. Defaulted to ``()`` so older code that constructs
+    ``DeflatedSharpeReport`` directly (without notes) keeps working."""
+
     @property
     def verdict(self) -> str:
         """Bucketed verdict on the realistic-null DSR. Matches the
@@ -229,10 +237,34 @@ def deflated_sharpe(
     if n_trials < 1:
         raise ValueError(f"n_trials must be >= 1, got {n_trials}")
 
-    synth = np.asarray(synthetic_sharpes, dtype=np.float64)
-    synth = synth[np.isfinite(synth)]
+    # 1.0.21 — refuse to collapse a NaN observed_sr silently. Without
+    # this guard, `np.mean(synth <= NaN)` returns 0.0 (NaN comparisons
+    # are always False), so the realistic DSR would silently come back
+    # as 0.0 "looks like noise" instead of raising on the bad input.
+    if not np.isfinite(observed_sr):
+        raise ValueError(
+            f"observed_sr must be finite; got {observed_sr!r}. "
+            "A NaN typically means the strategy had zero return variance "
+            "on the window (constant series) or all-NaN returns — handle "
+            "that case before calling deflated_sharpe."
+        )
+
+    synth_raw = np.asarray(synthetic_sharpes, dtype=np.float64)
+    synth_total = synth_raw.size
+    synth = synth_raw[np.isfinite(synth_raw)]
     if synth.size == 0:
         raise ValueError("synthetic_sharpes is empty (or all NaN/inf)")
+    # 1.0.21 — surface the effective-N delta. If a customer passed 1000
+    # synth paths and 200 came back NaN (e.g. zero-vol synth windows
+    # ran a divide-by-zero in their backtest), the DSR is now computed
+    # on 800, not 1000 — and that should be visible in the report.
+    n_dropped = synth_total - synth.size
+    notes_acc: list[str] = []
+    if n_dropped > 0:
+        notes_acc.append(
+            f"dropped {n_dropped}/{synth_total} non-finite synthetic Sharpes "
+            f"({100.0 * n_dropped / synth_total:.1f}%) before computing DSR"
+        )
 
     # ----- Realistic null --------------------------------------------------
     # Empirical CDF of observed SR in the synthetic best-of-N distribution.
@@ -252,8 +284,13 @@ def deflated_sharpe(
     # with n_trials — e.g. N(0,1) samples while claiming n_trials=1000. The
     # realistic and analytical DSRs will disagree dramatically and the
     # customer can't tell which to trust.
-    global _NULL_SOURCE_WARNED
-    if synth.size >= 2 and not _NULL_SOURCE_WARNED:
+    # 1.0.21 — removed module-level _NULL_SOURCE_WARNED dedup: the
+    # global meant the FIRST call in a process warned and every
+    # subsequent call (different inputs, different metric) was silenced.
+    # Python's default warning filter dedupes by call-site source line,
+    # which is the right granularity here — same call-site warns once,
+    # different call-sites each warn.
+    if synth.size >= 2:
         synth_std = float(np.std(synth, ddof=1))
         sem = synth_std / np.sqrt(synth.size) if synth_std > 0 else 0.0
         if sem > 0 and abs(e_max_realistic - e_max_analytical) > 3.0 * sem:
@@ -268,7 +305,6 @@ def deflated_sharpe(
                 UserWarning,
                 stacklevel=2,
             )
-            _NULL_SOURCE_WARNED = True
 
     if strategy_returns is not None:
         from scipy.stats import kurtosis, skew
@@ -281,10 +317,47 @@ def deflated_sharpe(
             gamma3 = float(skew(rets))
             gamma4 = float(kurtosis(rets, fisher=False))  # raw kurtosis (Normal = 3)
             t_obs = rets.size
+        # 1.0.21 — units coupling warning. Bailey-LdP variance formula
+        # Var(SR) ≈ (1 - γ₃·SR + ((γ₄-1)/4)·SR²) / (T-1) requires that
+        # `observed_sr` be in the SAME units as the per-period returns
+        # used to derive γ₃, γ₄. The most common footgun: customer passes
+        # an annualized Sharpe (typical scale ~0.5 - 3.0, occasionally 5+)
+        # together with daily returns. Catch this by combining a heuristic
+        # on |SR| (annualized SRs above ~3.5 are vanishingly rare for
+        # daily-return distributions) and t_obs (large t_obs suggests
+        # sub-annual frequency where annualization would have been
+        # applied). The fix: pass the per-period Sharpe (mean/std of the
+        # SAME `strategy_returns` series, no √T scaling) or annualize the
+        # returns first.
+        if t_obs > 60 and abs(observed_sr) > 3.5:
+            warnings.warn(
+                f"deflated_sharpe: observed_sr={observed_sr:.3f} with "
+                f"t_obs={t_obs} per-period strategy_returns likely indicates a "
+                f"units mismatch — the Bailey-LdP variance formula requires "
+                f"`observed_sr` in the SAME units as `strategy_returns` "
+                f"(per-period, not annualized). Either pass the per-period "
+                f"Sharpe (mean/std of strategy_returns, no √T scaling) or "
+                f"compute γ₃/γ₄ on the annualized return series. The "
+                f"analytical DSR returned in this call is computed under the "
+                f"units the caller actually passed; mismatch makes it "
+                f"~3-5x off the textbook reference.",
+                UserWarning,
+                stacklevel=2,
+            )
     else:
-        # No returns provided — drop the higher-moment correction.
+        # No returns provided — drop the higher-moment correction. Note
+        # that the analytical DSR variance is now (T-1)^-1 with T=252
+        # baked in, which assumes one year of daily observations. Surface
+        # this assumption in the returned notes so customers don't read
+        # `dsr.analytical` as comparable to dsr.realistic when their
+        # actual horizon is wildly different.
         gamma3, gamma4 = 0.0, 3.0
-        t_obs = 252  # assume one year of daily observations as a sensible default
+        t_obs = 252  # default; see note below
+        notes_acc.append(
+            "analytical DSR computed under t_obs=252 assumption (no "
+            "strategy_returns passed) — pass strategy_returns to use the "
+            "actual sample size + higher-moment correction."
+        )
 
     # Bailey-LdP (2014) variance of the Sharpe estimator:
     #   Var(SR) ≈ (1 - γ₃·SR + ((γ₄-1)/4)·SR²) / (T-1)
@@ -313,4 +386,5 @@ def deflated_sharpe(
         expected_max_sr_analytical=e_max_analytical,
         threshold_sr_realistic=threshold_realistic,
         threshold_sr_analytical=threshold_analytical,
+        notes=tuple(notes_acc),
     )

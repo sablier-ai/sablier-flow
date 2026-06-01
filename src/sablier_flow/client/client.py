@@ -1772,7 +1772,25 @@ class Client:
             record["result_key_b64"].encode("ascii")
         )
         kind = str(record.get("kind") or "")
-        result_bytes = self._wait_and_decrypt(job_id, kind, result_key)
+        # 1.0.21 — clear the pending file on EVERY terminal outcome,
+        # not only on success. The previous code only called
+        # _clear_pending_job after _wait_and_decrypt returned normally;
+        # if the server returned a terminal failure (RemoteJobError —
+        # job cancelled / failed / expired / deleted), the exception
+        # propagated and the pending file lived on disk indefinitely.
+        # Customers ended up with stale .json files in
+        # ~/.sablier/pending_jobs/ that resume() would keep trying to
+        # poll forever. Wrap the wait+decrypt in try/except and clear
+        # the pending file on RemoteJobError too — only the live retryable
+        # cases (network hiccups, attestation transient failures) should
+        # leave the pending file in place.
+        try:
+            result_bytes = self._wait_and_decrypt(job_id, kind, result_key)
+        except RemoteJobError:
+            # Terminal server-side failure — clear the pending record so
+            # the next resume() doesn't hit the same dead handle.
+            _clear_pending_job(job_id)
+            raise
         _clear_pending_job(job_id)
         payload = JobResultPayload.from_bytes(result_bytes)
         if kind == "fit":
@@ -1781,6 +1799,9 @@ class Client:
             return _stamp_sdk_version(payload.to_generation_result())
         if kind == "validate":
             return _stamp_sdk_version(payload.to_validation_report())
+        # Unknown kind = corrupted pending file; also clear it so resume()
+        # doesn't loop forever on a record we can't decode.
+        _clear_pending_job(job_id)
         raise ValueError(
             f"pending job {job_id!r} has unknown kind {kind!r}; expected "
             "one of 'fit' | 'generate' | 'validate'"
@@ -2782,16 +2803,54 @@ def _resolve_endpoint(
     """
     if explicit:
         raw = explicit
+        # 1.0.21 — even an explicit kwarg must clear the safety gate.
+        # Previously Client(endpoint='http://my.cdn/...', api_key=...)
+        # would happily send the api_key in cleartext, and
+        # Client(endpoint='https://evil.example.com/...') would ship it
+        # off-domain. The kwarg path was the only one bypassing
+        # validate_stored_endpoint; tighten it here so the api_key is
+        # never transmitted to an unvetted endpoint regardless of how
+        # the customer set it.
+        _enforce_endpoint_allowlist(raw, source="endpoint= kwarg")
     else:
         env_endpoint = os.environ.get("SABLIER_FLOW_ENDPOINT")
         if env_endpoint:
+            # 1.0.21 — same gate for env-var override. CI / agent setups
+            # that set SABLIER_FLOW_ENDPOINT must point at an allowlisted
+            # host; otherwise the api_key leaks to whatever URL the env
+            # var was pointed at.
+            _enforce_endpoint_allowlist(env_endpoint, source="SABLIER_FLOW_ENDPOINT env var")
             raw = env_endpoint
         elif stored:
+            # `stored` already went through validate_stored_endpoint in
+            # load_credentials — keep it as the safe fallback.
             raw = stored
         else:
             # The hardcoded default already includes /v1 — return it directly.
             return "https://flow.sablier.ai/v1"
     return _ensure_v1_suffix(raw)
+
+
+def _enforce_endpoint_allowlist(url: str, *, source: str) -> None:
+    """Reject ``url`` if it doesn't pass the same allowlist
+    :func:`validate_stored_endpoint` applies to ~/.sablier/credentials.
+
+    Raises ``ValueError`` rather than warning — for the kwarg + env-var
+    paths the api_key would otherwise be transmitted to the rejected
+    host, so a hard refusal at construction time is strictly safer than
+    a logged warning + silent send."""
+    from sablier_flow.client.login import validate_stored_endpoint
+    if validate_stored_endpoint(url) is None:
+        raise ValueError(
+            f"refusing to use endpoint={url!r} from {source}: only "
+            f"https:// URLs pointing at sablier.ai / *.sablier.ai (or the "
+            f"Cloud Run canonical hostnames) are allowed. The Sablier "
+            f"client must not ship your API key to an unvetted host. "
+            f"If you need a non-standard endpoint for local development, "
+            f"pass it via the credentials file under a named profile "
+            f"(the file's stored endpoint goes through the same allowlist "
+            f"but produces a warning rather than refusing construction)."
+        )
 
 
 def _ensure_v1_suffix(endpoint: str) -> str:

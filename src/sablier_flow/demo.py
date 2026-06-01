@@ -2,13 +2,14 @@
 
 Lets an evaluator run the SDK end-to-end with zero data setup::
 
-    import sablier_flow
+    import sablier_flow as sf
 
-    real = sablier_flow.demo_data()         # SPY/QQQ/IWM/TLT, 2010-2024
-    @sablier_flow.augment(n_paths=100, features=list(real.columns))
-    def my_backtest(df):
-        return {"sharpe": ...}
-    print(my_backtest(real).summary())
+    real = sf.demo_data()                   # SPY/QQQ/IWM/TLT + macro, 2010-2023
+    fit  = sf.fit(real, features=list(real.columns),
+                  data_types=real.attrs["data_types"], horizon=252)
+    gen  = sf.generate(fit.model_id, n_paths=100, like=real.iloc[-252:])
+    synth = [my_backtest(df) for df in gen.as_dataframes()]
+    print(sf.robustness(my_backtest(real.iloc[-252:]), synth).summary())
 
 The bundled data is a frozen historical slice — **not** market-realtime,
 **not** a production data source. It exists purely so a first-time

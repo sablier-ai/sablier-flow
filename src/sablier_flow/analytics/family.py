@@ -2,29 +2,30 @@
 realistic null, producing the strategy-family DSR + Probability of
 Backtest Overfitting (PBO).
 
-The single-strategy case is well served by ``@sablier_flow.augment`` —
-one decorator, one backtest function, one Sharpe vs N synthetic
-Sharpes. The interesting case is the *family-of-strategies* regime:
-``E[max_n SR_n]`` across M strategy variants under the realistic null
-vs the analytical Bailey-López-de-Prado null. This is the API for
+The single-strategy case is well served by the canonical ``sf.fit``
+→ ``sf.generate`` → ``sf.robustness`` pipeline: one fit, one Sharpe
+vs N synthetic Sharpes. The interesting case is the *family-of-strategies*
+regime: ``E[max_n SR_n]`` across M strategy variants under the realistic
+null vs the analytical Bailey-López-de-Prado null. This is the API for
 that case.
 
 Usage::
 
-    import sablier_flow
+    import sablier_flow as sf
 
     strategies = {
         f"ma_{fast}_{slow}": (lambda f, s: lambda df: my_backtest(df, fast=f, slow=s))(fast, slow)
         for fast, slow in [(5, 20), (10, 30), (20, 60), (30, 90)]
     }
 
-    report = sablier_flow.evaluate_family(
+    report = sf.evaluate_family(
         strategies, real_prices, n_paths=100, horizon=252,
+        data_types={c: "price" for c in real_prices.columns},
     )
 
     print(report.deflated_sharpe.realistic, report.deflated_sharpe.analytical)
     print(report.pbo)              # PBO via CSCV
-    report.to_html("audit.html")
+    print(report.summary())        # plain-English one-liner
 
 What's computed:
 
@@ -245,7 +246,35 @@ class FamilyReport:
         thr_realistic = self.deflated_sharpe.threshold_sr_realistic
         n_strats = len(self.strategy_names)
 
-        # Verdict bucket on the realistic-null DSR.
+        # 1.0.21 — when PBO ≥ 0.6, .verdict returns 'overfit_selection'
+        # (trumps the DSR-based bucket). summary() now LEADS with that
+        # bucket instead of cheerfully reporting "Significant" while
+        # .verdict says "overfit_selection" — a real inconsistency that
+        # showed up in the audit and would mislead a customer reading
+        # only the summary line in a Slack/CI log.
+        if np.isfinite(self.pbo) and self.pbo >= 0.6:
+            verdict = (
+                f"Overfit selection: best-of-{n_strats} ({best_name}, "
+                f"{metric} {best_val:+.3f}) does NOT generalize across "
+                f"train/test splits of the real history "
+                f"(PBO via CSCV = {self.pbo:.2f} ≥ 0.6). The in-sample "
+                f"best-of-{n_strats} appears to be selection bias from the "
+                f"grid search rather than a real edge."
+            )
+            if dsr_realistic >= 0.95:
+                verdict += (
+                    f" Note: realistic-null DSR = {dsr_realistic:.2f} clears "
+                    f"the 95% bar but PBO trumps it — re-tune on a wider "
+                    f"universe before reading the DSR as deployable."
+                )
+            else:
+                verdict += (
+                    f" Realistic-null DSR = {dsr_realistic:.2f} "
+                    f"(threshold {metric} ≥ {thr_realistic:+.3f} for 95%)."
+                )
+            return verdict
+
+        # DSR-based verdict (PBO either non-finite or < 0.6).
         # DSR ≥ 0.95: significant under realistic null
         # DSR ∈ [0.50, 0.95): better than median but not unambiguous
         # DSR < 0.50: real best looks worse than the synthetic best-of-N
@@ -273,15 +302,9 @@ class FamilyReport:
             f"95% bar with this family."
         )
 
-        # PBO note — flag if the in-sample-best doesn't generalize on real data
+        # PBO note — non-overfit cases only (overfit case returned above).
         if np.isfinite(self.pbo):
-            if self.pbo >= 0.6:
-                verdict += (
-                    f" PBO via CSCV = {self.pbo:.2f} (≥ 0.6) — grid-search "
-                    "results don't generalise across train/test splits of the "
-                    "real history; re-tune on a wider universe."
-                )
-            elif self.pbo <= 0.2:
+            if self.pbo <= 0.2:
                 verdict += (
                     f" PBO via CSCV = {self.pbo:.2f} — the in-sample-best "
                     "strategy is also the out-of-sample-best on most splits "
@@ -445,7 +468,7 @@ def evaluate_family(
     Generates the synthetic alternative-history paths **once** and runs
     every strategy on every path. The synthetic data round-trip dominates
     runtime, so amortising it across M strategies is materially faster
-    than calling ``@augment`` M times.
+    than M separate ``sf.fit`` → ``sf.generate`` → ``sf.robustness`` passes.
 
     Cost model
     ----------
@@ -462,10 +485,10 @@ def evaluate_family(
     strategies
         Mapping of ``name → backtest_fn``. Each ``backtest_fn`` is a
         callable ``f(prices: pd.DataFrame) -> float | dict[str, float]``
-        — same shape as ``@augment`` expects.
+        — the same backtest function shape ``sf.robustness`` accepts.
     real_data
-        The real-history DataFrame, same format as for
-        :func:`alternative_versions`.
+        The real-history DataFrame, same format as for :func:`fit`
+        and :func:`generate`.
     model_id
         Reuse a previously fitted model instead of training a fresh
         one. Pass the ``model_id`` returned from a prior ``sf.fit(...)``
@@ -581,18 +604,38 @@ def evaluate_family(
     from sablier_flow.client.client import generate as _generate
 
     # Split family-level kwargs into the fit + generate sides.
+    # 1.0.21 — fix the cold-start routing bug where data_types / api_key /
+    # endpoint / verify / attestation_mode / profile / cache_dir /
+    # pinned_image_digest / frequency were dumped into gen_kwargs only.
+    # Cold-start callers MUST be able to pass data_types= and api_key=
+    # to the fit side or the documented `sf.evaluate_family(strategies,
+    # real_data, data_types=...)` invocation crashes with TypeError
+    # before any synth round-trip.
+    _FIT_ONLY_KWARGS = {"features", "train_split", "embargo_days"}
+    _GEN_ONLY_KWARGS = {"anchor_data", "like", "n_paths"}
+    _DUAL_KWARGS = {
+        # Numeric / behavior — both sides honor them.
+        "horizon", "seed",
+        # Required data-shape annotations + frequency hint — both sides need them.
+        "data_types", "frequency",
+        # Connection / auth — both sides need them or fail at credential resolution.
+        "api_key", "endpoint", "verify", "attestation_mode",
+        "profile", "cache_dir", "pinned_image_digest",
+    }
     fit_kwargs: dict[str, Any] = {}
     gen_kwargs: dict[str, Any] = {}
     for key, value in flow_kwargs.items():
-        if key in {"features", "train_split", "embargo_days"}:
+        if key in _FIT_ONLY_KWARGS:
             fit_kwargs[key] = value
-        elif key in {"anchor_data", "like"}:
+        elif key in _GEN_ONLY_KWARGS:
             gen_kwargs[key] = value
-        elif key in {"horizon", "seed"}:
-            # horizon + seed are useful on both sides; pass through.
+        elif key in _DUAL_KWARGS:
             fit_kwargs[key] = value
             gen_kwargs[key] = value
         else:
+            # Unknown kwarg — forward to generate side (preserves the
+            # pre-1.0.21 default for any future kwarg we haven't
+            # explicitly classified).
             gen_kwargs[key] = value
 
     if model_id is not None:
@@ -829,8 +872,40 @@ def probability_of_backtest_overfitting(
         # Not enough data for meaningful CSCV — return NaN with a small partition count.
         return float("nan"), 0
 
-    # Split into S equal-sized contiguous chunks (drop any short tail).
+    # 1.0.21 — chunk_size diagnostics. The previous code silently
+    # truncated to `cscv_splits * chunk_size` rows (dropping a partial
+    # tail) and accepted chunks as small as 4 rows without surfacing
+    # either fact. A 4-row chunk is too short for most rolling-window
+    # backtests to compute even a single Sharpe; combined with the
+    # default cscv_splits=16, customers were getting NaN-dominated
+    # PBOs from inputs that "looked" big enough. Be loud about both.
     chunk_size = n_rows // cscv_splits
+    if chunk_size < 30:
+        warnings.warn(
+            f"probability_of_backtest_overfitting: n_rows={n_rows} / "
+            f"cscv_splits={cscv_splits} = chunk_size={chunk_size} (< 30). "
+            f"Most backtest functions need a minimum window of 20-30 bars "
+            f"to compute Sharpe / annualize / produce a meaningful number; "
+            f"PBO with chunks this small typically collapses to NaN-or-1.0 "
+            f"because the underlying backtests fail on the smaller train/test "
+            f"unions. Either pass more `real_data` (≥ {30 * cscv_splits} bars "
+            f"recommended) or lower `cscv_splits` (minimum 4, but 16 is the "
+            f"SDK floor for stable estimates).",
+            UserWarning,
+            stacklevel=2,
+        )
+    truncated = n_rows - (chunk_size * cscv_splits)
+    if truncated > 0:
+        # Quiet log — this is normal (any n_rows not divisible by S
+        # has a remainder) but power users should be able to see it.
+        warnings.warn(
+            f"probability_of_backtest_overfitting: truncated {truncated} "
+            f"trailing rows so each of the {cscv_splits} chunks has "
+            f"{chunk_size} rows. Pass real_data with a length divisible "
+            f"by cscv_splits to avoid this.",
+            UserWarning,
+            stacklevel=2,
+        )
     chunks: list[Any] = [
         real_data.iloc[i * chunk_size:(i + 1) * chunk_size] for i in range(cscv_splits)
     ]
@@ -889,6 +964,7 @@ def probability_of_backtest_overfitting(
 
     n_below_median = 0
     n_counted = 0
+    n_skipped_nonfinite = 0
     for train_indices in partitions:
         train_set = frozenset(train_indices)
         test_set = frozenset(chunk_indices) - train_set
@@ -897,6 +973,7 @@ def probability_of_backtest_overfitting(
         test_metrics = np.array(_eval_partition(test_set), dtype=np.float64)
 
         if not (np.all(np.isfinite(train_metrics)) and np.all(np.isfinite(test_metrics))):
+            n_skipped_nonfinite += 1
             continue
 
         if higher_is_better:
@@ -916,6 +993,42 @@ def probability_of_backtest_overfitting(
         n_counted += 1
 
     pbo = (n_below_median / n_counted) if n_counted else float("nan")
+    # 1.0.21 — surface partition-skip rate. If >50% of partitions were
+    # skipped because at least one strategy produced NaN/inf on that
+    # train/test split, the surviving PBO is computed on a biased
+    # subset of partitions (the ones where every strategy happened to
+    # be well-behaved) and the customer should know. Combined with the
+    # FamilyReport.acceptable=True path that returns True for any
+    # PBO < 0.6 (including NaN where n_counted=0 because acceptable
+    # only blocks pbo>=0.6), the silent failure mode was: every
+    # strategy is brittle, almost every partition gets dropped,
+    # surviving PBO is computed on a handful, FamilyReport says
+    # acceptable=True.
+    if n_counted > 0:
+        skip_rate = n_skipped_nonfinite / len(partitions)
+        if skip_rate >= 0.5:
+            warnings.warn(
+                f"probability_of_backtest_overfitting: "
+                f"{n_skipped_nonfinite}/{len(partitions)} partitions "
+                f"({skip_rate:.0%}) skipped because at least one strategy "
+                f"returned NaN/inf on the train/test split. PBO={pbo:.3f} "
+                f"is computed on the {n_counted} surviving partitions only "
+                f"and may not be representative. Investigate which strategy "
+                f"is brittle on small chunks (default chunk_size = "
+                f"{chunk_size} rows here).",
+                UserWarning,
+                stacklevel=2,
+            )
+    elif n_skipped_nonfinite > 0:
+        warnings.warn(
+            f"probability_of_backtest_overfitting: ALL {n_skipped_nonfinite} "
+            f"partitions skipped (every train/test split had at least one "
+            f"strategy returning NaN/inf). PBO is NaN — at least one "
+            f"strategy is fundamentally incompatible with chunk_size="
+            f"{chunk_size}-row windows.",
+            UserWarning,
+            stacklevel=2,
+        )
     return float(pbo), n_counted
 
 

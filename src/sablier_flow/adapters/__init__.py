@@ -29,6 +29,7 @@ __all__ = [
     "as_dataframes",
     "as_vectorbt_panel",
     "available_adapters",
+    "write_lean_csv_universe",
 ]
 
 
@@ -74,6 +75,13 @@ def __getattr__(name: str) -> Any:
     if name == "as_vectorbt_panel":
         from sablier_flow.adapters.vectorbt import as_vectorbt_panel
         return as_vectorbt_panel
+    if name == "write_lean_csv_universe":
+        # 1.0.21 — `from sablier_flow.adapters import write_lean_csv_universe`
+        # used to raise ImportError because the lazy __getattr__ + __all__
+        # only routed backtrader / vectorbt. The lean adapter has no extra
+        # deps (writes CSVs with stdlib), so this is a pure namespace fix.
+        from sablier_flow.adapters.lean import write_lean_csv_universe
+        return write_lean_csv_universe
     discovered = _discover_entry_points()
     if name in discovered:
         return discovered[name]

@@ -85,6 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Deterministic seed (otherwise the server picks one).")
     gen.add_argument("--features", default=None,
                      help="Comma-separated feature names; defaults to all input columns.")
+    gen.add_argument("--data-types", default=None,
+                     help="Required: per-column data-type annotation, either "
+                          "as JSON ('{\"SPY\": \"price\", \"VIX\": \"volatility\"}') "
+                          "or comma-separated col=type pairs "
+                          "(SPY=price,VIX=volatility). Allowed types: "
+                          "price, return, rate, index, volatility.")
     gen.add_argument("--api-key", default=None,
                      help="Override SABLIER_FLOW_API_KEY env var.")
     gen.add_argument("--idempotency-key", default=None,
@@ -171,6 +177,21 @@ def cmd_generate(ns: argparse.Namespace) -> int:
         [s.strip() for s in ns.features.split(",")] if ns.features else None
     )
 
+    # 1.0.21 — `data_types=` is required by Client.fit. Parse the CLI
+    # flag accepting either JSON or comma-separated col=type pairs, with
+    # a graceful fallback to df.attrs['data_types'] when the DataFrame
+    # was loaded from a Parquet file that already carries the annotation.
+    data_types = _parse_data_types_flag(ns.data_types, real)
+    if data_types is None:
+        print(
+            "error: --data-types is required (one of: price, return, rate, "
+            "index, volatility per feature). Examples:\n"
+            "  --data-types 'SPY=price,VIX=volatility'\n"
+            "  --data-types '{\"SPY\": \"price\", \"VIX\": \"volatility\"}'",
+            file=sys.stderr,
+        )
+        return 2
+
     from sablier_flow.adapters.dataframe import as_dataframes
     from sablier_flow.client.client import Client
 
@@ -178,6 +199,7 @@ def cmd_generate(ns: argparse.Namespace) -> int:
     fit_res = client.fit(
         real,
         features=features,
+        data_types=data_types,
         horizon=ns.horizon,
         seed=ns.seed,
     )
@@ -268,6 +290,65 @@ def main(argv: list[str] | None = None) -> int:
 # ============================================================================
 # Helpers
 # ============================================================================
+
+
+def _parse_data_types_flag(flag: str | None, df: Any) -> dict[str, str] | None:
+    """Parse the ``--data-types`` CLI value, with a graceful fallback to
+    ``df.attrs['data_types']`` when the input DataFrame carries the
+    annotation (Parquet roundtrips it; the bundled demo ships it).
+
+    Accepts two forms:
+      - JSON: ``--data-types '{"SPY": "price", "VIX": "volatility"}'``
+      - Pairs: ``--data-types 'SPY=price,VIX=volatility'``
+
+    Returns ``None`` only when the customer passed no flag AND the
+    DataFrame's ``attrs`` has no annotation — the caller surfaces a
+    clear error in that case rather than letting ``Client.fit`` raise
+    deep in the stack."""
+    import json as _json
+
+    if flag is None or flag.strip() == "":
+        # Parquet (via pyarrow) preserves df.attrs; the bundled demo
+        # writes data_types into attrs so a customer running
+        # `sablier-flow generate --input demo.parquet` doesn't need to
+        # repeat the map on the CLI.
+        attrs_types = getattr(df, "attrs", {}).get("data_types") if df is not None else None
+        if isinstance(attrs_types, dict) and attrs_types:
+            return {str(k): str(v) for k, v in attrs_types.items()}
+        return None
+
+    s = flag.strip()
+    if s.startswith("{"):
+        try:
+            parsed = _json.loads(s)
+        except _json.JSONDecodeError as e:
+            raise SystemExit(
+                f"error: --data-types JSON failed to parse: {e}. "
+                f"Example: --data-types '{{\"SPY\": \"price\"}}'"
+            ) from e
+        if not isinstance(parsed, dict):
+            raise SystemExit("error: --data-types JSON must be an object (dict)")
+        return {str(k): str(v) for k, v in parsed.items()}
+
+    # comma-separated pairs
+    out: dict[str, str] = {}
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            raise SystemExit(
+                f"error: --data-types entry {part!r} missing '=' "
+                f"(expected col=type, e.g. SPY=price)"
+            )
+        col, _, type_ = part.partition("=")
+        col, type_ = col.strip(), type_.strip()
+        if not col or not type_:
+            raise SystemExit(
+                f"error: --data-types entry {part!r} has empty column or type"
+            )
+        out[col] = type_
+    return out
 
 
 def _load_dataset(path: Path) -> Any:

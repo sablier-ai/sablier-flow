@@ -3,7 +3,7 @@ synthetic distribution since deployment?
 
 The flow:
 
-  1. Pre-deployment: customer runs ``robustness(...)`` or ``@augment``
+  1. Pre-deployment: customer runs ``robustness(...)`` or ``evaluate_family(...)``
      on the strategy they're about to deploy, gets a
      :class:`RobustnessReport` that retains the synthetic distribution
      of the chosen metric.
@@ -191,11 +191,29 @@ def consistency_check(
         )
 
     n_baseline_paths: int
-    if hasattr(baseline, "synthetic_values"):
+    # 1.0.21 — explicit FamilyReport branch. Without this, a customer
+    # passing a FamilyReport (which has `synthetic_max_values`, not
+    # `synthetic_values`) fell through to the raw-sequence branch
+    # `np.asarray(baseline, ...)` which silently coerced the dataclass
+    # into 0-D garbage or raised an unhelpful TypeError. The docstring
+    # specifically mentions FamilyReport.synthetic_max_values as a valid
+    # baseline; route it directly here.
+    if hasattr(baseline, "synthetic_max_values") and not hasattr(baseline, "synthetic_values"):
+        family_any: Any = baseline
+        synth_values: np.ndarray = np.asarray(
+            family_any.synthetic_max_values, dtype=np.float64
+        )
+        # FamilyReport doesn't carry higher_is_better directly; trust the
+        # caller's kwarg (default True for the Sharpe case) but don't
+        # try to cross-check the way we do for RobustnessReport.
+        if higher_is_better is None:
+            higher_is_better = True
+        n_baseline_paths = int(synth_values.size)
+    elif hasattr(baseline, "synthetic_values"):
         # RobustnessReport — pull the retained values + the direction.
         # mypy can't narrow the union purely from hasattr; cast via Any.
         baseline_any: Any = baseline
-        synth_values: np.ndarray = np.asarray(
+        synth_values = np.asarray(
             baseline_any.synthetic_values, dtype=np.float64
         )
         baseline_higher_is_better = bool(baseline_any.higher_is_better)
