@@ -7,6 +7,132 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-01 — data_types vocabulary collapse + intraday gate lifted
+
+The customer-facing surface now speaks a clean three-string `data_types`
+vocabulary and accepts any uniform-cadence DatetimeIndex. The frequency
+kwarg is gone. No legacy aliases are kept — there were no existing customers
+and a deprecation period would have just shipped two confusing surfaces.
+
+### Breaking changes (no migration path; clean cut)
+
+- **`ALLOWED_DATA_TYPES` collapsed from 5 strings to 3:**
+  - `'price'`  — log-return + z-score; for compounding multiplicative series
+    (asset prices, FX, ratios). Requires strictly positive values.
+  - `'level'`  — difference + z-score; for additive series that can cross
+    zero (interest rates, volatility indices, spreads, dollar index,
+    factor levels). Replaces the pre-1.1 `'rate'` / `'volatility'` / `'index'`
+    distinction, which were aliases for the same DIFFERENCE transform at the
+    SDK's row cadence.
+  - `'return'` — identity + z-score; for already-stationary series (factor
+    returns, pre-differenced data).
+  - Passing any of the retired strings (`'rate'`, `'volatility'`, `'index'`)
+    raises `ValueError` with an inline migration hint pointing to the new
+    name (`'rate'`/`'volatility'` → `'level'`, `'index'` → `'price'`).
+- **`frequency=` kwarg removed from `Client.fit / generate / validate`** and
+  every async sibling + module-level shortcut. Row cadence is auto-detected
+  from `real_data.index` via the median Δt and surfaced in the pre-flight
+  info line so callers can confirm before the GPU round-trip.
+- **`ALLOWED_FREQUENCIES` removed from the public surface.**
+- **Intraday gate lifted.** Any uniform-cadence DatetimeIndex is accepted —
+  daily, intraday (5-min, 1-min, hourly), weekly, monthly, quarterly. The
+  cyclical embedding the model conditions on is yearly seasonality
+  (day-of-year sin/cos) only — intraday-specific patterns (minute-of-day,
+  day-of-week effects) are not modeled in 1.1.0 and are on the roadmap for
+  a future minor.
+- **`DEMO_DATA_TYPES` registry updated** to use the new vocabulary
+  (`VIX` / `TNX` → `'level'`, `DXY` → `'price'`; `SPY` / `QQQ` / `IWM` /
+  `TLT` unchanged at `'price'`). The actual transforms applied to demo
+  data are byte-identical to 1.0.x — only the labels changed.
+
+### Architecture (the part you don't see)
+
+- **Wire-mapping shim** in the SDK: customer-`'level'` translates to
+  wire-`'rate'` (same DIFFERENCE transform on the current Cloud Run
+  backend); intraday cadences send `'daily'` on the wire so the legacy
+  `FREQUENCY_DATA_TYPE_TRANSFORMS` overrides never accidentally fire.
+  This contains the backend technical debt to a 3-entry dict in the SDK,
+  which gets deleted as a one-line PR when sablier-backend goes live on
+  AWS speaking the clean 3-string vocabulary natively. See
+  `sablier-backend/internal/data_types_extensibility.md` for the
+  registry-shape design that supports adding stair-step modifiers,
+  multi-cycle cyclical embeddings, event-driven channels, etc. in a
+  future minor without breaking the v1.1 customer surface.
+
+### What's NOT in 1.1.0 (and where they're going)
+
+| Feature | Status |
+|---|---|
+| Stair-step / forward-filled lower-cadence features (CPI, GDP, Fed rate) | Not supported — aggregate to row cadence first. Registry shape supports adding `'price_yoy'` / `'level_std'` etc. when a real customer needs them. |
+| Intraday-specific cyclical embeddings (minute-of-day, day-of-week) | Not modeled — yearly day-of-year is the only embedding today. Multi-cycle support is a model-quality improvement for a future minor. |
+| Auto-detection of data types | Not in the default API. Customer declares explicitly. Helper (`sf.suggest_data_types(df)`) could ship later as a convenience. |
+| Negative-value-tolerant `'price'` | Use `'level'` instead — the right escape hatch for series that could theoretically cross zero. |
+
+### Tests added
+
+- `tests/unit/test_data_types_vocabulary.py` — 32 tests covering the 3-string
+  contract, legacy alias rejection with migration hint, the wire-mapping
+  shim, and the demo registry's vocabulary.
+- `tests/unit/test_intraday_cadence.py` — 16 tests covering cadence
+  detection across uniform-cadence indices (5-min / 1-min / 15-min / hourly /
+  daily / weekly / monthly / quarterly), the wire-frequency back-compat
+  collapse, and the lifted intraday gate.
+
+## [1.0.22] - 2026-06-01 — demo dataset rename + docs sweep
+
+### Changed (breaking — dataset key)
+- **Demo dataset keys renamed for honesty:**
+  - `us_equities_macro_2010_2024` → `us_equities_macro_2010_2023`
+  - `us_equities_2010_2024` → `us_equities_2010_2023`
+
+  The data actually ends 2023-12-28; the `_2024` suffix in the key was
+  misleading. The default `sf.demo_data()` (with no arguments) is unaffected.
+  Customers using the explicit key need to update to the new spelling. The
+  bundled parquet filenames in the wheel are renamed to match.
+
+### Fixed (docs side — full sweep from a 92-finding Playwright audit)
+- Homepage hero code block now runnable end-to-end (was missing
+  `data_types=` and used undefined `real_data` / `my_backtest`).
+- Quickstart `5-line workflow` and `more explicit` blocks both runnable
+  (same root cause); added a symmetric-window warning admonition.
+- Recipes restructured into a shared `# The shared workflow` section
+  with the correct fit + generate + robustness pattern (`data_types=` per
+  column semantics, `like=backtest_window` for symmetric windows); each
+  recipe now shows only the loader. Five of seven recipes were previously
+  non-runnable.
+- kdb+/PyKX recipes in both `recipes.md` and `concepts/engine-integration.md`
+  rewritten as actual runnable PyKX (was dead f-string + wrong call
+  signature + mis-shaped payload).
+- `concepts/data-sourcing.md` canonical example no longer KeyErrors on
+  `df.attrs['data_types']` (now builds the dict at the loader).
+- `concepts/in-sample-is-correct.md` NN-distance bands aligned with
+  SDK.md (0.85-1.15 healthy band); literature citations
+  (López de Prado, Bailey, AWS HPC, TimeGAN, TSGBench, Carlini et al.,
+  Salvi et al.) hyperlinked.
+- `concepts/index.md` expanded from a 668-character stub into a proper
+  hub answering the four objections every senior quant raises in the
+  first ten minutes.
+- `SDK.md` Versioning section gets current version + CHANGELOG link +
+  recent-changes digest (was generic semver boilerplate);
+  `JobHandle.kind` enum corrected (`'train'` → `'fit'`).
+- `examples/00_getting_started.ipynb` Step 9 strategy family widened
+  from 6 SMA variants to 24 (the prior small family produced
+  `verdict: 'uncalibrated'` on the demo's own data, killing credibility
+  for the headline calibration tool).
+- `examples/01_backtest_robustness.ipynb` adds explicit prose
+  reconciliation for the FamilyReport aggregate-verdict label inversion
+  on small honest families (the per-strategy `overfit_score` carries the
+  demo's actual claim).
+- `examples/02_tstr_predictive_rank.ipynb` `horizon=63` →
+  `horizon=126` (now actually matches the 126-bar OOS window);
+  corrected the comment that wrongly claimed the OOS window "excludes COVID".
+- `examples/03_memorization_audit.ipynb` replay-floor prose reconciled
+  with the actual computed value (`R_replay ≈ 0.02`, not `≈ 0.15` /
+  `≈ 0.20`).
+- All four notebook install pins bumped to `>=1.0.22`; broken
+  in-notebook `../docs/SDK.md` 404 link replaced with
+  `https://docs.sablier.ai/SDK/`; broken in-page heading anchors fixed.
+
 ## [1.0.21] - 2026-06-01 — 28 fixes from adversarial multi-lens audit
 
 A multi-agent audit (security / ergonomics / docs-vs-reality / methodology /

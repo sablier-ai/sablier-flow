@@ -31,12 +31,12 @@ Two additional outputs surface for serious quants:
 - [Installation](#installation)
 - [Authentication](#authentication) — `sf.login()` / env / `~/.sablier/credentials`
 - [Security posture today (alpha)](#security-posture-today-alpha)
-- [The workflow: `fit` → `generate` → `validate`](#the-workflow-fit--generate--validate)
-  - [Schema contract](#schema-contract--what-real_data-must-look-like)
-  - [Strict `features=` validation](#strict-features-validation-071)
-  - [Async jobs (`fit_async` / `fetch_result` / `list_jobs` / `cancel_job`)](#async-jobs--fit_async--fetch_result--list_jobs--cancel_job)
-- [Forward generation — deployment forecasting](#forward-generation--deployment-forecasting)
-  - [Predictive validity (`sf.predictive_rank_score`)](#predictive-validity--sfpredictive_rank_score)
+- [The workflow: `fit` → `generate` → `validate`](#the-workflow-fit-generate-validate)
+  - [Schema contract](#schema-contract-what-real_data-must-look-like)
+  - [Strict `features=` validation](#strict-features-validation)
+  - [Async jobs (`fit_async` / `fetch_result` / `list_jobs` / `cancel_job`)](#async-jobs-fit_async-fetch_result-list_jobs-cancel_job)
+- [Forward generation — deployment forecasting](#forward-generation-deployment-forecasting)
+  - [Predictive validity (`sf.predictive_rank_score`)](#predictive-validity-sfpredictive_rank_score)
 - [Strategy families and parameter sweeps](#strategy-families-and-parameter-sweeps)
 - [Interpreting the output](#interpreting-the-output)
   - [Verdict](#verdict)
@@ -287,9 +287,9 @@ paths = sf.generate(fit.model_id, n_paths=1000, like=backtest_window,
                     data_types=real.attrs["data_types"], seed=42)
 ```
 
-**`data_types=`.** A required `dict[str, str]` mapping every column in `features=` to one of `{'price', 'return', 'rate', 'index', 'volatility'}`. The SDK picks the right transform per column (log-return for prices, z-score for rates / volatility / index levels, identity for already-stationary returns). Bundled demo DataFrames attach the canonical map on `df.attrs['data_types']` so you can pass it straight through. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`.
+**`data_types=`.** A required `dict[str, str]` mapping every column in `features=` to one of `{'price', 'level', 'return'}`. The SDK picks the right transform per column (log-return for prices, z-score for rates / volatility / index levels, identity for already-stationary returns). Bundled demo DataFrames attach the canonical map on `df.attrs['data_types']` so you can pass it straight through. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`.
 
-**Frequency auto-detection.** `sf.fit` auto-detects the bar period from the median Δt of `real.index` and classifies the data into one of `'daily'` / `'weekly'` / `'monthly'` / `'quarterly'`. Pass `frequency=` to override. Irregular indices raise (the SDK refuses to silently round-off your bars). Intraday classification is deferred to 1.1.0 — the 5-min preview demo is shipped so you can see the data shape and `data_types=` pattern, but intraday `fit` is rejected during schema validation.
+**Row cadence auto-detection.** `sf.fit` auto-detects the row cadence from the median Δt of `real.index` — **any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly). The detected cadence is surfaced in the pre-flight info line so you can see what the SDK inferred. Irregular indices raise (the SDK refuses to silently round-off your bars). The cyclical embedding the model conditions on is yearly seasonality (day-of-year sin/cos) only — intraday-specific seasonality (minute-of-day, day-of-week effects) is not modeled in 1.1.0 and is on the roadmap for a future minor.
 
 ### Strategies with a lookback / warmup period
 
@@ -343,7 +343,7 @@ The synthetic paths inherit the price anchor at `warmup_start` (so they continue
 | `df.index` | `pd.DatetimeIndex`, monotonic increasing, no duplicates (tz-naive or tz-aware, both fine) |
 | `df.columns` | numeric dtype on every column you list in `features=` — NaNs pass through to the model (it masks); a column whose post-ffill NaN fraction exceeds 0.7 is rejected with an error naming it |
 | values | raw prices, returns, rates, index levels, or volatility — the per-column transform is selected from `data_types=` (log-return for prices, z-score for rates / vol / index levels, identity for returns) |
-| `data_types=` (kwarg) | **required dict** mapping every column in `features=` to one of `{'price', 'return', 'rate', 'index', 'volatility'}`. Missing the kwarg raises `TypeError`; unknown values raise `ValueError`. Bundled demos attach the canonical map on `df.attrs['data_types']`. |
+| `data_types=` (kwarg) | **required dict** mapping every column in `features=` to one of `{'price', 'level', 'return'}`. Missing the kwarg raises `TypeError`; unknown values raise `ValueError`. Bundled demos attach the canonical map on `df.attrs['data_types']`. |
 | frequency | auto-detected from the median Δt of `df.index`. Allowed: `'daily'`, `'weekly'`, `'monthly'`, `'quarterly'`. Irregular indices raise. Intraday classification is deferred to 1.1.0 (the 5-min demo is preview-only). |
 | length | ≥ 200 rows on `fit` (the SDK rejects locally); shorter slices are allowed for `like=` / `anchor_data=` / `holdout_data=` |
 
@@ -355,7 +355,7 @@ Pass `features=None` to opt out and fit on every numeric column (no coverage che
 
 ### Async jobs — `fit_async` / `fetch_result` / `list_jobs` / `cancel_job`
 
-Every sync method has an async sibling that returns a `JobHandle` immediately after the encrypted upload completes. The handle carries the `job_id`, the kind (`'train'` / `'generate'` / `'validate'`), and the one-shot AES key needed to decrypt the result.
+Every sync method has an async sibling that returns a `JobHandle` immediately after the encrypted upload completes. The handle carries the `job_id`, the kind (`'fit'` / `'generate'` / `'validate'`), and the one-shot AES key needed to decrypt the result.
 
 ```python
 handle = sf.fit_async(real, features=list(real.columns),
@@ -882,12 +882,13 @@ Methods:
 Client.fit(
     real_data: pd.DataFrame,
     *,
+    data_types: dict[str, str],               # REQUIRED — per-column annotation: 'price' | 'level' | 'return'
     features: Sequence[str] | None = None,    # default: every numeric column of real_data
-    frequency: str | None = None,             # 'daily' | 'intraday' | 'weekly' | 'monthly' | pandas offset alias
     horizon: int | None = None,
     train_split: float | None = 0.8,          # set to None to skip the OOS split
     embargo_days: int = 21,
     seed: int | None = None,
+    quiet: bool = False,                      # suppress the stderr cost-estimate / actual-cost lines
     idempotency_key: str | None = None,
 ) -> FitResult
 
@@ -898,7 +899,9 @@ Client.generate(
     horizon: int | None = None,               # any length; defaults to training horizon
     anchor_data: pd.DataFrame | None = None,  # None → use server-stored training tail
     like: pd.DataFrame | None = None,         # convenience: derive horizon + index + anchor from this window
+    data_types: dict[str, str] | None = None, # required when `like=` or `anchor_data=` is set (carries fresh data)
     seed: int | None = None,
+    quiet: bool = False,
     idempotency_key: str | None = None,
 ) -> GenerationResult
 
@@ -906,8 +909,10 @@ Client.validate(
     model_id: str,
     *,
     holdout_data: pd.DataFrame | None = None, # None → use the OOS slice persisted at fit time
+    data_types: dict[str, str] | None = None, # required when holdout_data is set
     n_paths: int = 500,
     seed: int | None = None,
+    quiet: bool = False,
     idempotency_key: str | None = None,
 ) -> ValidationReport
 
@@ -923,7 +928,7 @@ Core workflow:
 ```python
 sf.fit(real_data, *, api_key=None,
        features=None, data_types,                     # data_types REQUIRED
-       frequency=None, horizon=None,
+       horizon=None,
        train_split=0.8, embargo_days=21, seed=None,
        idempotency_key=None,
        # connection-shape kwargs (env-var fallback) ───────────────
@@ -949,7 +954,7 @@ sf.validate(model_id, *, api_key=None,
             cache_dir=None, profile="default") -> ValidationReport
 ```
 
-`data_types` is a `dict[str, str]` mapping every column in `features=` to one of `{'price', 'return', 'rate', 'index', 'volatility'}`. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`. Demo DataFrames attach the canonical map on `df.attrs['data_types']`. On `sf.validate(model_id)` without `holdout_data` the server reuses the `data_types` registered at fit time — passing the kwarg in that mode is a no-op and is silently ignored.
+`data_types` is a `dict[str, str]` mapping every column in `features=` to one of `{'price', 'level', 'return'}`. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`. Demo DataFrames attach the canonical map on `df.attrs['data_types']`. On `sf.validate(model_id)` without `holdout_data` the server reuses the `data_types` registered at fit time — passing the kwarg in that mode is a no-op and is silently ignored.
 
 Async workflow:
 
@@ -993,10 +998,12 @@ Account / pre-flight:
 ```python
 sf.ping(*, api_key=None, **kw)         -> dict[str, Any]
 sf.whoami(*, api_key=None, **kw)       -> dict[str, Any]
-sf.credits(*, api_key=None, **kw)      -> dict[str, Any]
-sf.usage(*, since=None, until=None, kind=None, limit=100, api_key=None, **kw) -> list[dict]
-sf.usage_summary(*, period="month", api_key=None, **kw) -> dict[str, Any]
-sf.estimate_cost(kind, *, real_data=None, features=None, horizon=None, n_paths=None, api_key=None, **kw) -> dict[str, Any]
+sf.credits(*, api_key=None, **kw)      -> CreditsBalance      # Pydantic — use attribute access (balance.available, .monthly_used, ...)
+sf.usage(*, since=None, until=None, kind=None, limit=100, api_key=None, **kw) -> list[UsageEvent]
+sf.usage_summary(*, period="month", api_key=None, **kw) -> UsageSummary   # Pydantic — summary.total_credits, .by_kind, ...
+sf.estimate_cost(kind, *, real_data=None, features=None, horizon=None, n_paths=None, n_features=None, n_rows=None, api_key=None, **kw) -> dict[str, Any]
+    # Returns {estimated_credits, low, high, notes}. Wall-clock duration is NOT returned (see 1.0.20 changelog).
+    # `kind` must be one of 'fit' | 'generate' | 'validate' — 'train' is rejected since 1.0.18.
 ```
 
 Local helpers (no network):
@@ -1019,7 +1026,7 @@ Returned by `sf.fit_async` / `sf.generate_async` / `sf.validate_async`. Persista
 @dataclass(frozen=True)
 class JobHandle:
     job_id: str
-    kind: str                # 'train' | 'generate' | 'validate'
+    kind: str                # 'fit' | 'generate' | 'validate'
     result_key_b64: str      # standard-base64 of the AES-256-GCM key — treat as a secret
 
     def to_dict(self) -> dict[str, str]: ...
@@ -1433,3 +1440,14 @@ The public API follows semantic versioning. Major releases (`X.0.0`) may
 introduce breaking changes; minor (`X.Y.0`) and patch (`X.Y.Z`) releases
 preserve backwards compatibility. The current version is exposed at
 `sablier_flow.__version__`.
+
+**Current release:** **1.0.21** ([PyPI](https://pypi.org/project/sablier-flow/) · [CHANGELOG](https://github.com/sablier-ai/sablier-flow/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/sablier-ai/sablier-flow/releases))
+
+**Recent changes (full history in the CHANGELOG):**
+
+- **1.0.21** — 28 fixes from an adversarial multi-lens audit: CLI `generate` now wires `--data-types`, `LoginResult` / `JobHandle` reprs redact secrets, `endpoint=` kwarg + `SABLIER_FLOW_ENDPOINT` env-var both go through the allowlist (no more `http://` leak), `predictive_rank_score` rejects mixed dict-vs-scalar inputs, Bailey-LdP analytical-DSR units warning, `evaluate_family` dual-routes `data_types` / `api_key` / `frequency` to both fit and generate, `from sablier_flow.adapters import write_lean_csv_universe` now works, `FamilyReport.summary()` leads with `'overfit_selection'` when PBO ≥ 0.6.
+- **1.0.20** — Four co-founder-flagged fixes: `sf.login()` truncates `key_prefix` to 12 chars regardless of what the server sends, `sf.estimate_cost(...)` pops `estimated_duration_s` from the returned dict (heuristic was 4–5× too high), `DeflatedSharpeReport.__format__` routes numeric specs to `.realistic` so `f"{report:.4f}"` no longer crashes, `evaluate_family` emits a `UserWarning` when `len(real_data) != gen.horizon`.
+- **1.0.19** — `Client.generate` / `generate_async` now anchor forward-forecast paths at `anchor_data.iloc[-1]` (was falling back to checkpoint-end, producing a visible ~$90 SPY-level gap on the docs site chart); broad docs sweep removing `client.alternative_versions(...)` (never existed), `MemorizationReport.risk` (real type is `ValidationReport.memorization_risk`), and the never-implemented `strict_oos_mode=True` parameter.
+- **1.0.18** — `__dir__()` on `sablier_flow` so `dir(sf)` returns the full 60-name public surface (was 2 — agent introspection was effectively empty); `estimate_cost` is credits-only (no more bogus wall-clock prediction); `evaluate_family` runtime warning drops the wall-clock seconds figure.
+
+Pin behaviour you care about explicitly. The 1.0.X series is the first production release of the public Python SDK.

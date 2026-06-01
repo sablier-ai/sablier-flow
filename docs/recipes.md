@@ -19,10 +19,11 @@ Once your loader produces `df` (a `pd.DataFrame` with a `DatetimeIndex` and one 
 import sablier_flow as sf
 
 # REQUIRED — annotate each column with its semantics so the SDK applies
-# the right transform. Allowed values: 'price', 'return', 'rate',
-# 'index', 'volatility'. Hard-coding {c: 'price' for c in df.columns}
-# is fine IFF every column is a tradeable price — for yields use 'rate',
-# vol surfaces 'volatility', macro/factor levels 'index', etc.
+# the right transform. Allowed values: 'price', 'level', 'return'.
+# Hard-coding {c: 'price' for c in df.columns} is fine IFF every column
+# is a tradeable price — for yields / vols / spreads / dollar-index-style
+# series use 'level' (additive, z-scored differences); for already-stationary
+# return series use 'return' (identity z-score).
 data_types = {c: 'price' for c in df.columns}
 
 backtest_window = df.iloc[-252:]                     # the slice your strategy will evaluate
@@ -42,7 +43,7 @@ report = sf.robustness(
 print(report.summary())
 ```
 
-**Important:** `data_types` is required and per-column. Use `'price'` for tradeable prices, `'rate'` for yields and credit spreads, `'volatility'` for vol-surface points or VIX-like series, `'index'` for non-tradeable level series (e.g. DXY, factor indices), and `'return'` for already-stationary return columns. Mis-typing a column silently routes the wrong transform server-side.
+**Important:** `data_types` is required and per-column. Use `'price'` for tradeable, strictly-positive, compounding series (asset prices, FX, ratios), `'level'` for additive series that can cross zero (yields, vols, spreads, dollar index, factor levels), and `'return'` for already-stationary returns (factor returns, pre-differenced data). Mis-typing a column silently routes the wrong transform server-side.
 
 **Symmetric window:** pass `like=backtest_window` so synth paths have the same length and index as your evaluation window. Comparing real Sharpe on the full history against synth Sharpes on a 252-bar window is asymmetric and mechanically produces `'highly_overfit'` ([why](https://docs.sablier.ai/concepts/in-sample-is-correct/)).
 
@@ -182,6 +183,6 @@ print(sablier_flow.available_demo_datasets())        # list other bundled option
 | Naming | Column names are arbitrary strings; we use them as `feature_names` in the response |
 | Missing data | Drop or forward-fill before calling — the SDK rejects NaN rows |
 | Length | At least 252 rows (1y daily) for stable training; 1000+ recommended; 5000+ is the empirical sweet spot for daily equity panels (see `sf.demo_data()` — ~3500 bars across 7 features) |
-| Frequency | Auto-detected from the index via `pd.infer_freq` (median-bar-Δt fallback for irregular indices). Allowed values: `'daily'`, `'weekly'`, `'monthly'`, `'quarterly'`. Pass `frequency=` to `sf.fit` to override. Intraday is deferred to 1.1.0. |
+| Row cadence | Auto-detected from `real.index` via median Δt. **Any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly, quarterly). Irregular indices raise. The cyclical embedding is yearly seasonality only — intraday-specific patterns (minute-of-day, day-of-week) are not modeled in 1.1.0. |
 
 The SDK does not know what your features mean — it learns the joint distribution from the rows you give it. Equities, FX, futures, credit spreads, vol surfaces, yields, even non-financial time series (energy demand, weather, retail sales) all work the same way.

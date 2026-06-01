@@ -42,7 +42,7 @@ data_types = {col: 'price' for col in real_data.columns}
 # Or for a mixed panel — annotate per column:
 # data_types = {
 #     'SPY': 'price', 'QQQ': 'price',
-#     'US10Y': 'rate', 'VIX': 'volatility', 'DXY': 'index',
+#     'US10Y': 'level', 'VIX': 'level', 'DXY': 'price',
 # }
 
 sf.login()                                      # or set SABLIER_FLOW_API_KEY
@@ -138,7 +138,7 @@ df = pd.DataFrame({
 
 ### Pattern 5: Your own proprietary alt-data
 
-Whatever you've built — sentiment scores, credit-card panels, satellite-derived inventory features — already lives in some pipeline that produces DataFrames. Plug that into `sf.fit(your_alt_data_df, features=list(your_alt_data_df.columns), data_types={c: 'index' for c in your_alt_data_df.columns}, horizon=252)`. Most alt-data series are non-tradeable factor levels — use `data_types='index'` for those (`'rate'` for credit-card APRs, `'price'` only if the series is itself tradeable). The model trains on whatever joint structure you feed it.
+Whatever you've built — sentiment scores, credit-card panels, satellite-derived inventory features — already lives in some pipeline that produces DataFrames. Plug that into `sf.fit(your_alt_data_df, features=list(your_alt_data_df.columns), data_types={c: 'level' for c in your_alt_data_df.columns}, horizon=252)`. Most alt-data series are non-tradeable additive series — use `data_types='level'` for those (z-score of differences, handles negatives and zero-crossings). Use `'price'` only when the series is itself a tradeable, strictly-positive, compounding instrument. The model trains on whatever joint structure you feed it.
 
 ## What sablier-flow does with your DataFrame
 
@@ -179,7 +179,7 @@ The error messages point to the exact problem so the customer's data team can fi
 
 ## Frequency
 
-`sf.fit` auto-detects the bar period from your `DatetimeIndex` via `pd.infer_freq` (with a median-bar-delta fallback for irregular indices) and classifies the data into one of `daily` / `weekly` / `monthly` / `quarterly`. Pass `frequency=` to override.
+`sf.fit` auto-detects the row cadence from your `DatetimeIndex` via the median Δt. **Any uniform-cadence DatetimeIndex is accepted in 1.1.0** — daily, intraday (5-min / 1-min / hourly), weekly, monthly, quarterly. Irregular indices raise; the SDK refuses to silently round-off your bars. The detected cadence is surfaced in the pre-flight info line so you can confirm what the SDK inferred before the GPU round-trip.
 
 Intraday classification (minute / 5-min / 15-min bars) is **deferred to 1.1.0** when the cyclical minute-of-day / day-of-week embeddings ship. The bundled `sf.demo_data('us_equities_macro_5min_3mo')` is a preview-only sample so you can see the data shape today; running `sf.fit` on a 5-min DataFrame raises during the schema check. For now, aggregate to daily bars before fitting.
 

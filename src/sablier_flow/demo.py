@@ -69,9 +69,17 @@ DEMO_DATA_TYPES: dict[str, dict[str, str]] = {
         "QQQ": "price",
         "IWM": "price",
         "TLT": "price",
-        "VIX": "volatility",
-        "TNX": "rate",
-        "DXY": "index",
+        # 1.1.0 vocabulary: VIX / TNX / DXY all fall under `level` (additive
+        # series — z-score of differences). Pre-1.1.0 they were
+        # 'volatility' / 'rate' / 'index' separately, but the daily-cadence
+        # transform was identical (DIFFERENCE for VIX & TNX) and DXY's
+        # LOG_RETURN treatment is now expressed via the `price` kind.
+        # See sablier-backend/internal/data_types_extensibility.md for why
+        # the rate / volatility / index distinction was a frequency-override
+        # artifact that the SDK no longer needs to expose.
+        "VIX": "level",
+        "TNX": "level",
+        "DXY": "price",
     },
     "us_equities_macro_5min_3mo": {
         # Intraday substitutes for the daily-only macros (VIX/TNX/DXY have no

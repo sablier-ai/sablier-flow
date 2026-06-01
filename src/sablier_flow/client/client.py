@@ -76,7 +76,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ALLOWED_DATA_TYPES",
-    "ALLOWED_FREQUENCIES",
     "Client",
     "cancel_job",
     "credits",
@@ -114,12 +113,29 @@ _ATTESTATION_MODE_DEFAULT: Any = object()
 # Canonical data-layer contract. The five column types are the only ones the
 # backend transform code knows how to z-score forward and invert back to the
 # customer's space without silently producing a wrong synth output.
-ALLOWED_DATA_TYPES = frozenset({"price", "return", "rate", "index", "volatility"})
+ALLOWED_DATA_TYPES = frozenset({"price", "level", "return"})
+# 1.1.0 — collapsed from the 5-string {price, return, rate, index, volatility}
+# vocabulary that conflated semantic kind with a frequency-aware override path.
+# The new vocabulary is transform-honest:
+#   'price'  → log-return + z-score      (compounding multiplicative series)
+#   'level'  → difference + z-score      (additive series; rates, vols, spreads, indices)
+#   'return' → identity + z-score        (already-stationary series)
+# Stair-step / forward-filled lower-cadence features (CPI, GDP, Fed rate) are
+# NOT supported in 1.1.0 — customer aggregates to row cadence first. Extension
+# path (cycle/stair modifiers, multi-cycle cyclical embeddings, event channels)
+# is designed-but-deferred; see sablier-backend/internal/data_types_extensibility.md.
 
-# Bar cadences the model's cyclical embeddings handle. Intraday is rejected
-# until calendar seasonality is generalized (deferred to 1.1.0); irregular
-# indexes are rejected outright with a pointer to pass frequency= explicitly.
-ALLOWED_FREQUENCIES = frozenset({"daily", "weekly", "monthly", "quarterly"})
+# Internal wire mapping: the current Cloud Run backend still speaks the
+# legacy 5-string vocabulary. The new backend on AWS (sablier-backend) will
+# speak the clean 3-string vocab natively; until that flips, the SDK
+# translates `'level'` → `'rate'` on the wire (same DIFFERENCE transform
+# server-side). When the new backend ships and gets attested as live, this
+# mapping becomes the identity.
+_WIRE_DATA_TYPE_MAPPING = {
+    "price":  "price",
+    "level":  "rate",
+    "return": "return",
+}
 
 # Post-ffill NaN fraction the SDK tolerates before the data is unusable. Above
 # this the model would mask out nearly every step for that column, so we surface
@@ -279,7 +295,6 @@ class Client:
         *,
         data_types: dict[str, str] | None = None,
         features: Sequence[str] | None = None,
-        frequency: str | None = None,
         horizon: int | None = None,
         train_split: float | None = 0.8,
         embargo_days: int = 21,
@@ -293,35 +308,38 @@ class Client:
         subsequent :meth:`generate` and :meth:`validate` calls.
 
         ``real_data`` must be a :class:`pandas.DataFrame` with a
-        :class:`~pandas.DatetimeIndex` (monotonic, ideally no duplicates)
-        and all-numeric columns — typically prices or returns indexed by
-        bar date. NaNs are tolerated and passed through to the model
-        (which masks them). The SDK rejects only columns whose post-ffill
-        NaN fraction exceeds 70%. Need ≥ 200 rows (the floor for a
-        usable flow model); more is better.
+        :class:`~pandas.DatetimeIndex` (monotonic, ideally no duplicates,
+        uniform cadence) and all-numeric columns — typically prices or
+        returns indexed by bar timestamp. **Any uniform cadence is
+        accepted** in 1.1.0 (daily, intraday 5-min / 1-min, weekly,
+        monthly, etc.); the SDK auto-detects the row cadence from the
+        index. NaNs are tolerated and passed through to the model (which
+        masks them). The SDK rejects only columns whose post-ffill NaN
+        fraction exceeds 70%. Need ≥ 200 rows; more is better.
 
-        ``data_types`` (REQUIRED) maps each feature column to its canonical
-        type. Allowed values: ``'price'``, ``'return'``, ``'rate'``,
-        ``'index'``, ``'volatility'`` (see :data:`ALLOWED_DATA_TYPES`). The
-        backend transform code uses these to pick the correct forward +
-        inverse z-score branch. Missing or unsupported values raise
-        :class:`TypeError` / :class:`ValueError` before the network
-        round-trip.
+        ``data_types`` (REQUIRED) maps each feature column to one of
+        :data:`ALLOWED_DATA_TYPES`:
+
+          - ``'price'``  — compounding multiplicative series (asset prices,
+            FX, ratios). Transformed via log-return + z-score. Must be
+            strictly positive.
+          - ``'level'``  — additive series with meaningful levels (rates,
+            volatility indices, spreads, dollar index). Transformed via
+            difference + z-score. Can cross zero / be negative.
+          - ``'return'`` — already-stationary series (factor returns,
+            pre-differenced data). Transformed via identity + z-score.
+
+        Missing or unsupported values raise :class:`TypeError` /
+        :class:`ValueError` before the network round-trip. Stair-step
+        features (forward-filled lower-cadence data such as monthly CPI in
+        a daily DataFrame) are NOT supported in 1.1.0 — aggregate to the
+        row cadence before fitting.
 
         ``features`` is the list of columns the model trains on. All listed
         columns are co-generated jointly — every feature is sampled at
         every horizon step and every column is available to constraints,
         backtests, and downstream analytics. Defaults to every numeric
         column of ``real_data`` when omitted.
-
-        ``frequency`` is the bar period of the data. Allowed values:
-        ``'daily'``, ``'weekly'``, ``'monthly'``, ``'quarterly'`` (see
-        :data:`ALLOWED_FREQUENCIES`). ``None`` (default) auto-detects from
-        ``real_data.index`` using the median Δt; irregular indexes raise
-        :class:`ValueError` with a pointer to pass ``frequency=``
-        explicitly, and intraday cadences are rejected with a 1.1.0
-        deferral message. The resolved family drives the set of internal
-        cyclical embeddings the model uses.
 
         ``train_split`` (default ``0.8``) controls the train/test split:
         the server holds out the last ``1 - train_split`` fraction of
@@ -355,7 +373,6 @@ class Client:
             real_data,
             data_types=data_types,
             features=features,
-            frequency=frequency,
             horizon=horizon,
             train_split=train_split,
             embargo_days=embargo_days,
@@ -389,7 +406,6 @@ class Client:
         model_id: str,
         *,
         data_types: dict[str, str] | None = None,
-        frequency: str | None = None,
         n_paths: int = 1000,
         horizon: int | None = None,
         anchor_data: pd.DataFrame | None = None,
@@ -432,16 +448,6 @@ class Client:
         ``'rate'``, ``'index'``, ``'volatility'`` (see
         :data:`ALLOWED_DATA_TYPES`). When ``like`` / ``anchor_data`` is
         supplied, ``data_types`` is also checked against those columns.
-
-        ``frequency`` is the bar period of the requested synth output.
-        Allowed values: ``'daily'``, ``'weekly'``, ``'monthly'``,
-        ``'quarterly'`` (see :data:`ALLOWED_FREQUENCIES`). ``None``
-        (the default) reuses the model's training frequency from the
-        checkpoint — no client-side detection from ``like.index`` /
-        ``anchor_data.index`` (short windows that span a holiday gap
-        would otherwise trip the irregular-index guard even though the
-        underlying series is plain business-daily). Pass an explicit
-        value to override.
 
         Quality trade-off: ``horizon`` (or ``len(like)``) doesn't have to
         match the training horizon — the generator is horizon-agnostic
@@ -528,17 +534,9 @@ class Client:
         # late-failure: a short ``like=df.iloc[-21:]`` window that spans
         # a holiday gap (Christmas, Thanksgiving, exchange closures) has
         # a p95 Δt up to ~3.5d which trips the "irregular index" guard
-        # in ``_detect_frequency`` even though the underlying series is
-        # plain business-daily. The model already registered its
-        # frequency at fit time; re-detecting it on every generate from
-        # a sub-window the customer didn't ask us to inspect was pure
-        # friction. Contract:
-        #   - explicit frequency=  → validate + ship on wire (override)
-        #   - frequency= omitted   → leave None, server reuses the
-        #                            model's registered training freq
-        resolved_frequency: str | None = (
-            _require_frequency(frequency, None) if frequency is not None else None
-        )
+        # 1.1.0 — the `frequency=` kwarg is gone from the public surface;
+        # the server reuses the model's registered training frequency on
+        # every generate. Like/anchor windows just inherit it.
 
         # ``like=df`` is the convenient front-end: derive length + index +
         # anchor *price level* from a single DataFrame so the synthetic
@@ -601,9 +599,7 @@ class Client:
             "seed": int(seed),
         }
         if normalized_data_types is not None:
-            params["feature_data_types"] = normalized_data_types
-        if resolved_frequency is not None:
-            params["frequency"] = resolved_frequency
+            params["feature_data_types"] = _to_wire_data_types(normalized_data_types)
         if like_index is not None:
             params["like_index"] = like_index
         if anchor_prices is not None:
@@ -640,7 +636,6 @@ class Client:
         model_id: str,
         *,
         data_types: dict[str, str] | None = None,
-        frequency: str | None = None,
         holdout_data: pd.DataFrame | None = None,
         n_paths: int = 500,
         seed: int | None = None,
@@ -657,18 +652,9 @@ class Client:
 
         ``data_types`` (REQUIRED only when ``holdout_data`` is supplied)
         maps each model column to its canonical type. Allowed values:
-        ``'price'``, ``'return'``, ``'rate'``, ``'index'``,
-        ``'volatility'`` (see :data:`ALLOWED_DATA_TYPES`). When
-        ``holdout_data`` is supplied the keys are also checked against
-        its column set.
-
-        ``frequency`` is the bar period of the validation data. Allowed
-        values: ``'daily'``, ``'weekly'``, ``'monthly'``, ``'quarterly'``
-        (see :data:`ALLOWED_FREQUENCIES`). ``None`` (the default) reuses
-        the model's training frequency from the checkpoint — no
-        client-side detection from ``holdout_data.index`` (short
-        holiday-spanning windows would otherwise trip the
-        irregular-index guard). Pass an explicit value to override.
+        ``'price'``, ``'level'``, ``'return'`` (see
+        :data:`ALLOWED_DATA_TYPES`). When ``holdout_data`` is supplied
+        the keys are also checked against its column set.
 
         ``n_paths`` defaults to 500 — empirically the smallest value
         that yields stable structural-metric estimates (KS / ES tail
@@ -718,10 +704,6 @@ class Client:
         # "irregular index" detection guard even when the underlying
         # cadence was plain business-daily; the model already knows
         # its training frequency so re-detecting here was pure friction.
-        # Explicit frequency= still validates + forwards as an override.
-        resolved_frequency: str | None = (
-            _require_frequency(frequency, None) if frequency is not None else None
-        )
         params: dict[str, Any] = {
             "model_id": model_id,
             "n_paths": int(n_paths),
@@ -729,9 +711,7 @@ class Client:
             "holdout": holdout_data is not None,
         }
         if normalized_data_types is not None:
-            params["feature_data_types"] = normalized_data_types
-        if resolved_frequency is not None:
-            params["frequency"] = resolved_frequency
+            params["feature_data_types"] = _to_wire_data_types(normalized_data_types)
         # 1.0.10 — cost-accounting visibility (see Client.fit /
         # Client.generate for the persona-testing rationale).
         self._print_estimate_cost_line(
@@ -1084,13 +1064,11 @@ class Client:
         # wire shape is unambiguous (top-level only — no double-send).
         wire_params = dict(params)
         feature_data_types = wire_params.pop("feature_data_types", None)
-        frequency = wire_params.pop("frequency", None)
         create_resp = self._transport.create_job(
             CreateJobRequest(  # type: ignore[arg-type]
                 kind=kind,
                 params=wire_params,
                 feature_data_types=feature_data_types,
-                frequency=frequency,
             ),
             idempotency_key=idempotency_key,
         )
@@ -1188,14 +1166,13 @@ class Client:
         *,
         data_types: dict[str, str] | None,
         features: Sequence[str] | None,
-        frequency: str | None,
         horizon: int | None,
         train_split: float | None,
         embargo_days: int,
         seed: int,
     ) -> dict[str, Any]:
         """Client-side fit preflight — DataFrame validation, strict feature
-        coverage check, frequency resolution + log line, and the params
+        coverage check, row-cadence detection + log line, and the params
         dict the server expects. Shared by :meth:`fit` and :meth:`fit_async`.
 
         Strict feature check (introduced 0.7.1) — raises ``ValueError`` if:
@@ -1278,24 +1255,31 @@ class Client:
             arg_name="real_data",
         )
 
-        resolved_frequency = _require_frequency(frequency, real_data.index)
-
-        # User-visible: tells humans + agents what the SDK thinks the bar
-        # cadence is BEFORE the 15-minute fit kicks off. Cheap insurance
-        # against the "fit ran but the model wasn't what I expected" case.
-        freq_source = "explicit" if frequency is not None else "auto-detect (median Δt)"
+        # 1.1.0 — row cadence is auto-detected from the DatetimeIndex and
+        # surfaced for the customer's info line; the wire-frequency value
+        # sent to the server is collapsed to one of the four backend-known
+        # families via _resolve_wire_frequency (intraday → 'daily' on the
+        # wire so the legacy FREQUENCY_DATA_TYPE_TRANSFORMS overrides
+        # don't accidentally fire on the customer's at-cadence data).
+        cadence_label, median_dt = _detect_row_cadence(real_data.index)
+        wire_frequency = _resolve_wire_frequency(cadence_label)
         n_cols = len(effective_features)
         print(
             f"sablier-flow: fitting {n_cols} feature(s) over {len(real_data)} bars  "
-            f"[detected freq: {resolved_frequency} via {freq_source}]"
+            f"[row cadence: {cadence_label} (median Δt={median_dt})]"
         )
+
+        # Translate the customer-facing 3-string vocabulary to the wire
+        # 5-string vocabulary the current backend speaks. When
+        # sablier-backend goes live on AWS this collapses to identity.
+        wire_data_types = _to_wire_data_types(normalized_data_types)
 
         return {
             "horizon": horizon,
             "target_features": feature_list,
             "conditioning_features": [],
-            "feature_data_types": normalized_data_types,
-            "frequency": resolved_frequency,
+            "feature_data_types": wire_data_types,
+            "frequency": wire_frequency,
             "train_split": float(train_split) if train_split is not None else None,
             "embargo_days": int(embargo_days),
             "seed": int(seed),
@@ -1353,7 +1337,6 @@ class Client:
         *,
         data_types: dict[str, str] | None = None,
         features: Sequence[str] | None = None,
-        frequency: str | None = None,
         horizon: int | None = None,
         train_split: float | None = 0.8,
         embargo_days: int = 21,
@@ -1406,7 +1389,6 @@ class Client:
             real_data,
             data_types=data_types,
             features=features,
-            frequency=frequency,
             horizon=horizon,
             train_split=train_split,
             embargo_days=embargo_days,
@@ -1424,7 +1406,6 @@ class Client:
         model_id: str,
         *,
         data_types: dict[str, str] | None = None,
-        frequency: str | None = None,
         n_paths: int = 1000,
         horizon: int | None = None,
         anchor_data: pd.DataFrame | None = None,
@@ -1517,10 +1498,6 @@ class Client:
         # "irregular index" guard even when the underlying cadence was
         # plain business-daily; the model already registered its
         # training frequency so re-detecting was pure friction.
-        # Explicit frequency= still validates + forwards as an override.
-        resolved_frequency: str | None = (
-            _require_frequency(frequency, None) if frequency is not None else None
-        )
         like_index: list[str] | None = None
         anchor_prices: dict[str, float] | None = None
         if like is not None:
@@ -1559,9 +1536,7 @@ class Client:
             "seed": int(seed),
         }
         if normalized_data_types is not None:
-            params["feature_data_types"] = normalized_data_types
-        if resolved_frequency is not None:
-            params["frequency"] = resolved_frequency
+            params["feature_data_types"] = _to_wire_data_types(normalized_data_types)
         if like_index is not None:
             params["like_index"] = like_index
         if anchor_prices is not None:
@@ -1578,7 +1553,6 @@ class Client:
         model_id: str,
         *,
         data_types: dict[str, str] | None = None,
-        frequency: str | None = None,
         holdout_data: pd.DataFrame | None = None,
         n_paths: int = 500,
         seed: int | None = None,
@@ -1629,16 +1603,9 @@ class Client:
             )
         else:
             normalized_data_types = None
-        # 1.0.8: mirror the data_types contract on the wire for
-        # ``frequency`` (see Client.generate for the rationale). The
-        # model already registered its training frequency, so omitted
-        # ``frequency=`` no longer triggers an auto-detect from the
-        # holdout slice — short holiday-spanning windows tripped the
-        # irregular-index guard. Explicit frequency= still validates +
-        # forwards as an override.
-        resolved_frequency: str | None = (
-            _require_frequency(frequency, None) if frequency is not None else None
-        )
+        # 1.1.0 — the `frequency=` kwarg is gone from the public surface;
+        # the server reuses the model's registered training frequency on
+        # validate. Holdout slices inherit it.
         params: dict[str, Any] = {
             "model_id": model_id,
             "n_paths": int(n_paths),
@@ -1646,9 +1613,7 @@ class Client:
             "holdout": holdout_data is not None,
         }
         if normalized_data_types is not None:
-            params["feature_data_types"] = normalized_data_types
-        if resolved_frequency is not None:
-            params["frequency"] = resolved_frequency
+            params["feature_data_types"] = _to_wire_data_types(normalized_data_types)
         return self._async_dispatch(
             kind="validate",
             real_data=holdout_data,
@@ -2335,7 +2300,7 @@ def _require_data_types(
         raise TypeError(
             f"{arg_name}= is required (no default). Pass a dict mapping "
             f"each feature column to its canonical type, e.g. "
-            f"{arg_name}={{'SPY': 'price', 'VIX': 'volatility'}}. Allowed "
+            f"{arg_name}={{'SPY': 'price', 'VIX': 'level'}}. Allowed "
             f"values: {sorted(ALLOWED_DATA_TYPES)}."
         )
     if not isinstance(data_types, dict):
@@ -2352,10 +2317,32 @@ def _require_data_types(
             f"covering every feature: {expected}. Allowed values: "
             f"{sorted(ALLOWED_DATA_TYPES)}."
         )
+    # 1.1.0 — friendly migration error for the old 5-string vocabulary.
+    # No customers existed before this rename, but the in-wheel demo
+    # registry + every public example used the old names; surface a
+    # precise pointer if a caller still passes one.
+    _LEGACY_ALIASES = {
+        "rate": "level",
+        "volatility": "level",
+        "index": "price",
+    }
     bad: list[tuple[str, Any]] = [
         (k, v) for k, v in data_types.items() if v not in ALLOWED_DATA_TYPES
     ]
     if bad:
+        legacy_hits = [(k, v, _LEGACY_ALIASES[v]) for k, v, in [
+            (k, v) for k, v in bad if v in _LEGACY_ALIASES
+        ]]
+        if legacy_hits:
+            mapping = ", ".join(
+                f"{k!r}: {old!r} → {new!r}" for k, old, new in legacy_hits
+            )
+            raise ValueError(
+                f"{arg_name} uses retired data-type name(s) (collapsed in 1.1.0): "
+                f"{mapping}. Update to the new vocabulary "
+                f"({sorted(ALLOWED_DATA_TYPES)}) — see "
+                f"https://docs.sablier.ai/SDK/#data-types"
+            )
         bad_pairs = ", ".join(f"{k!r}={v!r}" for k, v in bad)
         raise ValueError(
             f"{arg_name} has unsupported value(s): {bad_pairs}. Allowed "
@@ -2365,85 +2352,101 @@ def _require_data_types(
     return {str(k): str(v) for k, v in data_types.items()}
 
 
-def _detect_frequency(index: Any) -> str:
-    """Auto-detect the bar cadence of a DatetimeIndex and return one of
-    :data:`ALLOWED_FREQUENCIES`. Raises :class:`ValueError` with a precise
-    pointer when the index is irregular or intraday.
+def _to_wire_data_types(customer_data_types: dict[str, str]) -> dict[str, str]:
+    """Translate the SDK's customer-facing 3-string vocabulary to the
+    legacy 5-string vocabulary the current Cloud Run backend speaks.
 
-    Order of precedence: pandas.infer_freq → median Δt heuristic. Both
-    must collapse to the same coarse family ('daily' / 'weekly' /
-    'monthly' / 'quarterly'); anything else is rejected because the
-    server's cyclical embeddings only know those four families today.
+    Customer-facing → wire:
+        'price'  → 'price'    (LOG_RETURN, unchanged)
+        'level'  → 'rate'     (DIFFERENCE — same transform server-side; the
+                               backend's enum still distinguishes 'rate' /
+                               'volatility' / 'index' but they all dispatch
+                               to DIFFERENCE at daily, which is what we want.
+                               We pick 'rate' as the canonical wire value.)
+        'return' → 'return'   (IDENTITY, unchanged)
+
+    Removed when sablier-backend goes live on AWS and natively speaks
+    {'price', 'level', 'return'}.
+    """
+    return {col: _WIRE_DATA_TYPE_MAPPING[t] for col, t in customer_data_types.items()}
+
+
+def _detect_row_cadence(index: Any) -> tuple[str, pd.Timedelta]:
+    """Auto-detect the row cadence of a DatetimeIndex.
+
+    Returns ``(human_label, median_delta)``. ``human_label`` is the
+    customer-facing description for the info line ("intraday (5-min)",
+    "daily", "monthly", etc.). The actual wire value sent to the server
+    is always ``'daily'`` via :func:`_resolve_wire_frequency` for
+    backwards compatibility with the current Cloud Run backend's
+    transform pipeline (see ``_WIRE_DATA_TYPE_MAPPING`` rationale near
+    the top of this module).
+
+    Raises only on degenerate inputs: non-DatetimeIndex, single-row
+    series, or grossly irregular sampling (95th-percentile gap > 3× the
+    median, which is almost certainly an event log rather than a bar
+    series).
     """
     if not isinstance(index, pd.DatetimeIndex) or len(index) < 2:
         raise ValueError(
-            "frequency auto-detection requires a DatetimeIndex with at least "
-            "2 rows. Pass frequency= explicitly, e.g. 'daily' / 'weekly' / "
-            "'monthly' / 'quarterly'."
+            "row-cadence auto-detection requires a DatetimeIndex with at "
+            "least 2 rows. Pass a DataFrame with a proper DatetimeIndex."
         )
-    # Median Δt is the source of truth — pandas.infer_freq returns None on
-    # every business-day series with a single missing bar, but the median
-    # is robust to that. Round to a whole-day delta for matching.
     deltas = index.to_series().diff().dropna()
     if deltas.empty:
         raise ValueError(
-            "frequency auto-detection requires at least 2 distinct timestamps."
+            "row-cadence auto-detection requires at least 2 distinct "
+            "timestamps."
         )
     median = deltas.median()
-    one_day = pd.Timedelta(days=1)
-    if median < one_day:
-        raise ValueError(
-            f"intraday cadence detected (median Δt={median}); intraday is "
-            "not yet supported (deferred to 1.1.0 once calendar "
-            "seasonality is generalized). Resample to daily or coarser."
-        )
-    # Reject grossly-irregular series: any series whose 95th-percentile gap
-    # is more than 3x the median is almost certainly an event-log, not a
-    # bar series. The model assumes near-uniform sampling.
     p95 = deltas.quantile(0.95)
     if p95 > 3 * median:
         raise ValueError(
-            f"irregular index detected (median Δt={median}, p95 Δt={p95}) — "
-            "pass frequency= explicitly (one of "
-            f"{sorted(ALLOWED_FREQUENCIES)}) and resample to a uniform grid."
+            f"irregular index detected (median Δt={median}, p95 Δt={p95}). "
+            "The model requires a uniform-cadence DatetimeIndex — resample "
+            "your DataFrame to a uniform grid before fitting."
         )
-    # Classify into the four families by median delta. Daily covers
-    # business-day (Δ≈1d, Mon-Fri skips weekend → some Δ=3d but median=1d).
-    # Weekly covers Δ≈7d, monthly Δ in (25,35] days, quarterly Δ in (85,100].
+    one_minute = pd.Timedelta(minutes=1)
+    one_hour = pd.Timedelta(hours=1)
+    one_day = pd.Timedelta(days=1)
+    if median < one_minute:
+        return (f"intraday ({median.total_seconds():.0f}s)", median)
+    if median < one_hour:
+        return (f"intraday ({int(median.total_seconds() / 60)}-min)", median)
+    if median < one_day:
+        return (f"intraday ({median.total_seconds() / 3600:.1f}h)", median)
     if median <= pd.Timedelta(days=3):
-        return "daily"
+        return ("daily", median)
     if median <= pd.Timedelta(days=10):
-        return "weekly"
+        return ("weekly", median)
     if median <= pd.Timedelta(days=45):
-        return "monthly"
+        return ("monthly", median)
     if median <= pd.Timedelta(days=100):
-        return "quarterly"
+        return ("quarterly", median)
     raise ValueError(
-        f"bar cadence median Δt={median} is coarser than quarterly; not "
-        "supported."
+        f"row cadence median Δt={median} is coarser than quarterly; not "
+        "supported by the model. Resample to quarterly or finer."
     )
 
 
-def _require_frequency(
-    frequency: str | None,
-    index: Any,
-) -> str:
-    """Resolve the ``frequency`` kwarg: explicit > auto-detected. Both
-    paths produce a value in :data:`ALLOWED_FREQUENCIES` or raise."""
-    if frequency is not None:
-        if frequency not in ALLOWED_FREQUENCIES:
-            raise ValueError(
-                f"frequency={frequency!r} is not supported. Allowed values: "
-                f"{sorted(ALLOWED_FREQUENCIES)}. Intraday is deferred to a "
-                "future release once calendar seasonality is generalized."
-            )
-        return frequency
-    if index is None:
-        raise ValueError(
-            "frequency= is required when no DataFrame is supplied to "
-            f"auto-detect from. Allowed values: {sorted(ALLOWED_FREQUENCIES)}."
-        )
-    return _detect_frequency(index)
+def _resolve_wire_frequency(cadence_label: str) -> str:
+    """Map the SDK's detected row cadence to a wire-frequency string the
+    current backend accepts. The backend understands
+    ``{'daily', 'weekly', 'monthly', 'quarterly'}`` and uses the value
+    to gate ``FREQUENCY_DATA_TYPE_TRANSFORMS`` overrides (YoY / MoM /
+    LEVEL_STANDARDIZED for forward-filled lower-cadence features).
+
+    In 1.1.0 we never want those overrides to fire (the SDK no longer
+    exposes stair-step support; customer data is assumed at-cadence).
+    So we collapse the wire value to ``'daily'`` for everything that
+    isn't one of the four canonical families — including intraday
+    (which the backend doesn't natively know but treats fine as a
+    timestep sequence with day-of-year cyclical embedding).
+    """
+    if cadence_label in ("daily", "weekly", "monthly", "quarterly"):
+        return cadence_label
+    # Any intraday cadence label collapses to 'daily' on the wire.
+    return "daily"
 
 
 def _check_nan_fraction(
@@ -2970,7 +2973,6 @@ def fit(
     api_key: str | None = None,
     data_types: dict[str, str] | None = None,
     features: Sequence[str] | None = None,
-    frequency: str | None = None,
     horizon: int | None = None,
     train_split: float | None = 0.8,
     embargo_days: int = 21,
@@ -3017,7 +3019,6 @@ def fit(
         real_data,
         data_types=data_types,
         features=features,
-        frequency=frequency,
         horizon=horizon,
         train_split=train_split,
         embargo_days=embargo_days,
@@ -3032,7 +3033,6 @@ def generate(
     *,
     api_key: str | None = None,
     data_types: dict[str, str] | None = None,
-    frequency: str | None = None,
     n_paths: int = 1000,
     horizon: int | None = None,
     anchor_data: pd.DataFrame | None = None,
@@ -3075,7 +3075,6 @@ def generate(
     return client.generate(
         model_id,
         data_types=data_types,
-        frequency=frequency,
         n_paths=n_paths,
         horizon=horizon,
         anchor_data=anchor_data,
@@ -3091,7 +3090,6 @@ def validate(
     *,
     api_key: str | None = None,
     data_types: dict[str, str] | None = None,
-    frequency: str | None = None,
     holdout_data: pd.DataFrame | None = None,
     n_paths: int = 500,
     seed: int | None = None,
@@ -3131,7 +3129,6 @@ def validate(
     return client.validate(
         model_id,
         data_types=data_types,
-        frequency=frequency,
         holdout_data=holdout_data,
         n_paths=n_paths,
         seed=seed,

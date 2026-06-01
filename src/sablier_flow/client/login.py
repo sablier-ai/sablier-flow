@@ -33,6 +33,7 @@ existing pattern.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -170,10 +171,8 @@ def _write_credentials_blob(data: dict[str, dict[str, Any]]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     # Remove any leftover tmp from a previous crashed write so the
     # O_EXCL doesn't trip.
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.unlink(tmp)
-    except FileNotFoundError:
-        pass
     fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     try:
         with os.fdopen(fd, "w") as fh:
@@ -182,10 +181,8 @@ def _write_credentials_blob(data: dict[str, dict[str, Any]]) -> None:
         # If json.dump raises mid-write, leave the empty tmp file
         # behind so the next attempt's O_EXCL doesn't silently overwrite
         # a partial write that might somehow still be useful for debugging.
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
     tmp.replace(path)
 

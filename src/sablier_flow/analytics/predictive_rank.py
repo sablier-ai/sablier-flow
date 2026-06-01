@@ -217,35 +217,24 @@ def _extract_primary(
     primary_metric: str | None,
 ) -> tuple[dict[str, float], str]:
     """Coerce ``{name: scalar}`` or ``{name: {metric: scalar}}`` to a
-    flat ``{name: scalar}`` on a single chosen metric. Returns the dict
-    + the resolved metric name."""
+    flat ``{name: scalar}`` on a single chosen metric. Returns
+    ``(flat_dict, resolved_metric, form)`` where ``form`` is the literal
+    string ``'scalar'`` or ``'dict'`` describing what shape the input
+    used. The caller compares the form across real / synth sides to
+    catch the silent-mislabel bug (real=dict[sharpe], synth=scalar →
+    scalar gets labeled 'sharpe' with no way to verify)."""
     out: dict[str, float] = {}
     resolved = primary_metric
+    saw_scalar = False
+    saw_dict = False
     for name, value in results.items():
         if isinstance(value, (int, float, np.floating, np.integer)):
-            # 1.0.21 — reject mixed forms. If primary_metric was already
-            # resolved to a non-"value" key (e.g. 'sharpe' from the other
-            # side passed in as dict-form), a scalar here means we have
-            # no way to verify the scalar actually represents that metric
-            # — the rank correlation would silently compare Sharpe-real
-            # against (say) mean-return-synth, but the report would label
-            # the result 'well_calibrated on sharpe'. Force the caller
-            # to use matching forms on both sides.
-            if resolved is not None and resolved != "value":
-                raise ValueError(
-                    f"strategy {name!r} value is a scalar ({float(value)}), but "
-                    f"primary_metric={resolved!r} was resolved from the other "
-                    f"side (real_results / synth_results) or via the kwarg. "
-                    f"Pass both sides in matching form: either both as "
-                    f"scalars (primary_metric will default to 'value'), or "
-                    f"both as dicts with {resolved!r} as a key. Mixing forms "
-                    f"silently labels the rank correlation with the wrong "
-                    f"metric name."
-                )
+            saw_scalar = True
             out[str(name)] = float(value)
             if resolved is None:
                 resolved = "value"
         elif isinstance(value, Mapping):
+            saw_dict = True
             v_dict = {str(k): float(v) for k, v in value.items()}
             if resolved is None:
                 resolved = "sharpe" if "sharpe" in v_dict else next(iter(v_dict))
@@ -262,7 +251,14 @@ def _extract_primary(
             )
     if resolved is None:
         raise ValueError("results is empty — need at least 1 strategy")
-    return out, resolved
+    if saw_scalar and saw_dict:
+        raise ValueError(
+            "results mixes scalar and dict values across strategies — "
+            "every entry must be the same shape. Pass either all scalars "
+            "or all dicts with the same metric key."
+        )
+    form: Literal["scalar", "dict"] = "dict" if saw_dict else "scalar"
+    return out, resolved, form
 
 
 def predictive_rank_score(
@@ -366,8 +362,27 @@ def predictive_rank_score(
     if not synth_results:
         raise ValueError("synth_results is empty")
 
-    real_flat, resolved_metric = _extract_primary(real_results, primary_metric)
-    synth_flat, _ = _extract_primary(synth_results, resolved_metric)
+    real_flat, resolved_metric, real_form = _extract_primary(
+        real_results, primary_metric
+    )
+    synth_flat, _, synth_form = _extract_primary(synth_results, resolved_metric)
+    # 1.1.0 — cross-side form check. The pre-1.1 guard inside
+    # _extract_primary fired whenever a scalar was seen with a non-default
+    # primary_metric kwarg, which incorrectly rejected the legitimate
+    # both-sides-scalar-with-explicit-label pattern (e.g.
+    # predictive_rank_score({n: x}, {n: y}, primary_metric='sharpe')).
+    # The real footgun is mixing forms ACROSS sides — real=dict[sharpe],
+    # synth=scalar — which silently labels the scalar as the dict metric.
+    # We catch that explicitly here.
+    if real_form != synth_form:
+        raise ValueError(
+            f"real_results is in {real_form!r} form (e.g. "
+            f"{{name: {'metric_dict' if real_form == 'dict' else 'scalar'}}}); "
+            f"synth_results is in {synth_form!r} form. Pass both sides in "
+            f"matching form — mixing dict-form and scalar-form silently "
+            f"labels the rank correlation with the dict-side's metric name "
+            f"while the scalar side could represent anything."
+        )
 
     # Intersection of strategy names — defensive, the user may have
     # dropped a strategy from one side without realising.

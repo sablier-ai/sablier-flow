@@ -287,9 +287,9 @@ paths = sf.generate(fit.model_id, n_paths=1000, like=backtest_window,
                     data_types=real.attrs["data_types"], seed=42)
 ```
 
-**`data_types=`.** A required `dict[str, str]` mapping every column in `features=` to one of `{'price', 'return', 'rate', 'index', 'volatility'}`. The SDK picks the right transform per column (log-return for prices, z-score for rates / volatility / index levels, identity for already-stationary returns). Bundled demo DataFrames attach the canonical map on `df.attrs['data_types']` so you can pass it straight through. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`.
+**`data_types=`.** A required `dict[str, str]` mapping every column in `features=` to one of `{'price', 'level', 'return'}`. The SDK picks the right transform per column (log-return for prices, z-score for rates / volatility / index levels, identity for already-stationary returns). Bundled demo DataFrames attach the canonical map on `df.attrs['data_types']` so you can pass it straight through. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`.
 
-**Frequency auto-detection.** `sf.fit` auto-detects the bar period from the median Δt of `real.index` and classifies the data into one of `'daily'` / `'weekly'` / `'monthly'` / `'quarterly'`. Pass `frequency=` to override. Irregular indices raise (the SDK refuses to silently round-off your bars). Intraday classification is deferred to 1.1.0 — the 5-min preview demo is shipped so you can see the data shape and `data_types=` pattern, but intraday `fit` is rejected during schema validation.
+**Row cadence auto-detection.** `sf.fit` auto-detects the row cadence from the median Δt of `real.index` — **any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly). The detected cadence is surfaced in the pre-flight info line so you can see what the SDK inferred. Irregular indices raise (the SDK refuses to silently round-off your bars). The cyclical embedding the model conditions on is yearly seasonality (day-of-year sin/cos) only — intraday-specific seasonality (minute-of-day, day-of-week effects) is not modeled in 1.1.0 and is on the roadmap for a future minor.
 
 ### Strategies with a lookback / warmup period
 
@@ -343,7 +343,7 @@ The synthetic paths inherit the price anchor at `warmup_start` (so they continue
 | `df.index` | `pd.DatetimeIndex`, monotonic increasing, no duplicates (tz-naive or tz-aware, both fine) |
 | `df.columns` | numeric dtype on every column you list in `features=` — NaNs pass through to the model (it masks); a column whose post-ffill NaN fraction exceeds 0.7 is rejected with an error naming it |
 | values | raw prices, returns, rates, index levels, or volatility — the per-column transform is selected from `data_types=` (log-return for prices, z-score for rates / vol / index levels, identity for returns) |
-| `data_types=` (kwarg) | **required dict** mapping every column in `features=` to one of `{'price', 'return', 'rate', 'index', 'volatility'}`. Missing the kwarg raises `TypeError`; unknown values raise `ValueError`. Bundled demos attach the canonical map on `df.attrs['data_types']`. |
+| `data_types=` (kwarg) | **required dict** mapping every column in `features=` to one of `{'price', 'level', 'return'}`. Missing the kwarg raises `TypeError`; unknown values raise `ValueError`. Bundled demos attach the canonical map on `df.attrs['data_types']`. |
 | frequency | auto-detected from the median Δt of `df.index`. Allowed: `'daily'`, `'weekly'`, `'monthly'`, `'quarterly'`. Irregular indices raise. Intraday classification is deferred to 1.1.0 (the 5-min demo is preview-only). |
 | length | ≥ 200 rows on `fit` (the SDK rejects locally); shorter slices are allowed for `like=` / `anchor_data=` / `holdout_data=` |
 
@@ -882,9 +882,8 @@ Methods:
 Client.fit(
     real_data: pd.DataFrame,
     *,
-    data_types: dict[str, str],               # REQUIRED — per-column annotation: 'price' | 'return' | 'rate' | 'index' | 'volatility'
+    data_types: dict[str, str],               # REQUIRED — per-column annotation: 'price' | 'level' | 'return'
     features: Sequence[str] | None = None,    # default: every numeric column of real_data
-    frequency: str | None = None,             # 'daily' | 'weekly' | 'monthly' | 'quarterly' (intraday deferred to 1.1.0)
     horizon: int | None = None,
     train_split: float | None = 0.8,          # set to None to skip the OOS split
     embargo_days: int = 21,
@@ -901,7 +900,6 @@ Client.generate(
     anchor_data: pd.DataFrame | None = None,  # None → use server-stored training tail
     like: pd.DataFrame | None = None,         # convenience: derive horizon + index + anchor from this window
     data_types: dict[str, str] | None = None, # required when `like=` or `anchor_data=` is set (carries fresh data)
-    frequency: str | None = None,
     seed: int | None = None,
     quiet: bool = False,
     idempotency_key: str | None = None,
@@ -912,7 +910,6 @@ Client.validate(
     *,
     holdout_data: pd.DataFrame | None = None, # None → use the OOS slice persisted at fit time
     data_types: dict[str, str] | None = None, # required when holdout_data is set
-    frequency: str | None = None,
     n_paths: int = 500,
     seed: int | None = None,
     quiet: bool = False,
@@ -931,7 +928,7 @@ Core workflow:
 ```python
 sf.fit(real_data, *, api_key=None,
        features=None, data_types,                     # data_types REQUIRED
-       frequency=None, horizon=None,
+       horizon=None,
        train_split=0.8, embargo_days=21, seed=None,
        idempotency_key=None,
        # connection-shape kwargs (env-var fallback) ───────────────
@@ -957,7 +954,7 @@ sf.validate(model_id, *, api_key=None,
             cache_dir=None, profile="default") -> ValidationReport
 ```
 
-`data_types` is a `dict[str, str]` mapping every column in `features=` to one of `{'price', 'return', 'rate', 'index', 'volatility'}`. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`. Demo DataFrames attach the canonical map on `df.attrs['data_types']`. On `sf.validate(model_id)` without `holdout_data` the server reuses the `data_types` registered at fit time — passing the kwarg in that mode is a no-op and is silently ignored.
+`data_types` is a `dict[str, str]` mapping every column in `features=` to one of `{'price', 'level', 'return'}`. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`. Demo DataFrames attach the canonical map on `df.attrs['data_types']`. On `sf.validate(model_id)` without `holdout_data` the server reuses the `data_types` registered at fit time — passing the kwarg in that mode is a no-op and is silently ignored.
 
 Async workflow:
 

@@ -84,11 +84,10 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "1.0.21"
+__version__ = "1.1.0"
 
 __all__ = [
     "ALLOWED_DATA_TYPES",
-    "ALLOWED_FREQUENCIES",
     "AttestationQuote",
     "AttestationVerificationError",
     "AttestationVerifier",
@@ -179,9 +178,6 @@ def __getattr__(name: str) -> Any:
     if name == "ALLOWED_DATA_TYPES":
         from sablier_flow.client.client import ALLOWED_DATA_TYPES
         return ALLOWED_DATA_TYPES
-    if name == "ALLOWED_FREQUENCIES":
-        from sablier_flow.client.client import ALLOWED_FREQUENCIES
-        return ALLOWED_FREQUENCIES
 
     # Client + connection-shape entry points
     if name == "Client":
