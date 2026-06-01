@@ -1,0 +1,254 @@
+# Quickstart — from `pip install` to overfit verdict in 5 minutes
+
+The actual workflow a quant follows from a clean machine to a real verdict.
+
+## 0. Sign up + verify email (one-time)
+
+1. Go to [sablier.ai](https://sablier.ai) → **Sign up**. Email/password or "Sign in with Google" — both work.
+2. **Click the verification link** in the email Sablier sends. (Skip-able with Google OAuth — Google has already verified your email.)
+3. New accounts receive free credits — enough to fit + validate + generate against the bundled demo dataset a couple of times to see the full loop end-to-end.
+
+You only do this once per account. Subsequent machines authenticate via `sf.login()` (next section).
+
+## 1. Install
+
+```bash
+# Thin client (~30 MB, no GPU deps)
+pip install sablier-flow
+
+# Plus your engine of choice
+pip install 'sablier-flow[adapters-backtrader]'    # backtrader
+pip install 'sablier-flow[adapters-vectorbt]'      # vectorbt
+# LEAN works via write_lean_csv_universe — no extra deps
+```
+
+## 2. Authenticate
+
+The recommended path is interactive — `sf.login()` does an OAuth-style device flow and writes the minted API key to `~/.sablier/credentials`:
+
+```python
+import sablier_flow as sf
+
+sf.login()                      # prints a code + opens https://sablier.ai/auth/device
+                                # click Authorize on any signed-in device; the SDK picks the key up
+client = sf.Client()            # no api_key kwarg needed — credentials file does it
+```
+
+For CI / containers, set `SABLIER_FLOW_API_KEY=sk_live_...` in the environment instead; the SDK reads env vars before the credentials file. Explicit `api_key=` kwarg always wins.
+
+## 3. The end-to-end loop — canonical 5-line workflow
+
+Copy-pasteable against `sf.demo_data()` or any DataFrame of your own
+(use the demo to see it end-to-end with no setup; swap `df = your_data`
+for `df = pd.read_parquet("my_universe.parquet")` when you're ready).
+
+```python
+import sablier_flow as sf
+df = your_data  # multivariate time series, DatetimeIndex
+fit  = sf.fit(df, features=df.columns.tolist(), data_types={c: 'price' for c in df.columns}, horizon=21)
+gen  = sf.generate(fit.model_id, n_paths=100, like=df.iloc[-21:])
+synth_results = [my_backtest(d) for d in gen.as_dataframes()]
+verdict = sf.robustness(my_backtest(df), synth_results, primary_metric='sharpe')
+```
+
+`gen.as_dataframes()` (see `GenerationResult.as_dataframes`) returns
+`list[pd.DataFrame]`, one per synthetic alternative-history path, with
+the same columns as `df` and (when `like=` was passed) the same index
+shape as the window you handed in — your existing `my_backtest`
+function runs on each `d` unchanged.
+
+The variant below adds `sf.validate(...)` for a cheap OOS structural
+check and uses a longer history + named backtest window — same loop,
+just more explicit:
+
+```python
+import pandas as pd
+import sablier_flow as sf
+
+real = pd.read_parquet("my_universe.parquet")            # YOUR DataFrame, DatetimeIndex
+backtest_window = real.loc["2023-01-01":"2024-01-01"]    # the slice you'll evaluate
+
+fit    = sf.fit(real, features=list(real.columns), horizon=252, seed=42)   # ~15 min
+report = sf.validate(fit.model_id)                                          # cheap OOS check
+paths  = sf.generate(fit.model_id, n_paths=1000, like=backtest_window)     # synthetic alternative histories
+verdict = sf.robustness(my_backtest(backtest_window),
+                        [my_backtest(df) for df in paths.as_dataframes()],
+                        primary_metric="sharpe")
+```
+
+`my_backtest(df) -> dict` is **your existing code**. It returns a dict containing at least the primary metric (`sharpe`, `return`, whatever). Anything that runs on the real DataFrame runs unchanged on a synthetic one — same columns, same index, same dtype.
+
+## 4. The verdict
+
+```python
+print(verdict.summary())                 # plain-English one-liner
+print(verdict.verdict)                   # 'robust' | 'borderline' | 'overfit' | 'highly_overfit'
+print(verdict.overfit_score)             # 0.04 = real beat only 4% of alt-histories
+print(verdict.synthetic_median)          # +0.51 — typical Sharpe across alt-histories
+print(verdict.synthetic_p5, verdict.synthetic_p95)
+```
+
+### Verdict bands
+
+| Band | `overfit_score` | What it means |
+|---|---|---|
+| `robust` | `< 0.70` | Real result is consistent with the synthetic distribution. **No overfit signal** — but read the value sign separately: a `robust` Sharpe of `-1.2` means "consistently bad, not overfit." |
+| `borderline` | `0.70 – 0.85` | Real result is in the upper synthetic decile. Tighten parameters; some luck baked in. |
+| `overfit` | `0.85 – 0.95` | Real result is in the top 5–15% of synthetic outcomes. Probably curve-fitting. |
+| `highly_overfit` | `> 0.95` | Real beats essentially every synthetic alternative. Don't deploy live without out-of-sample revalidation. |
+
+The `summary()` string makes the "robust ≠ profitable" distinction explicit when real is outside the synth 5–95 CI.
+
+## 5. Sanity-check the synthetic data
+
+```python
+print(report.overall)               # 'pass' / 'warn' / 'fail' — weighted structural-validation verdict
+print(report.memorization_risk)     # 'low' / 'medium' / 'high'
+print(report.memorization_nn_distance_ratio)
+```
+
+`memorization_risk='high'` means the model is reproducing training samples — the overfit verdict above would be unreliable in that case. `memorization_nn_distance_ratio` can sit in the borderline 0.8–1.0 range for universes with > 10 jointly-modeled columns even when the model is fine; partition large universes into per-regime / per-asset-class sub-models if you see it.
+
+## 6. Forward forecasting — same workflow, future-looking data
+
+Everything above frames the SDK around backtest augmentation (synth paths parallel to a past window). The same generator also runs **forward** from your most recent bar — useful for predicting the distribution of strategy performance you'll see in deployment.
+
+Same `fit` → same `generate` → same backtest function. Only the anchor moves to "today":
+
+```python
+# Anchor forward generation at real.index[-1] by passing the recent tail as anchor_data.
+# The default 80/20 fit split is preserved so sf.validate(model_id) still works.
+forward_paths = sf.generate(
+    fit.model_id,
+    n_paths=1000,
+    horizon=60,                      # bars to project forward
+    anchor_data=real.iloc[-200:],    # last 200 bars = today's conditioning context
+)
+
+forward_dfs = forward_paths.as_dataframes()
+forward_sharpes = np.array([my_backtest(df)["sharpe"] for df in forward_dfs])
+
+print(f"expected sharpe (next 60 bars): {np.median(forward_sharpes):+.2f}")
+print(f"90% CI: [{np.percentile(forward_sharpes, 5):+.2f}, "
+      f"{np.percentile(forward_sharpes, 95):+.2f}]")
+```
+
+### How much to trust the forecast — `sf.predictive_rank_score`
+
+A generator that nails the marginals but inverts the strategy ranking is worse than useless for backtesting — a practitioner training a strategy family on it would systematically pick the worst real-market variant. Distributional metrics alone do not catch this. `sf.predictive_rank_score` runs the rank-validity check directly on the customer's own model + strategy family:
+
+```python
+# Use the slice sf.fit held out at train time as the OOS reference so the
+# calibration runs on truly unseen data. A naive last-N-row slice would
+# overlap the server's held-out OOS slice (last 20% minus embargo) and
+# bias the rank correlation upward.
+real_oos       = real.loc[fit.holdout_start_date:fit.holdout_end_date]
+anchor_end_pos = real.index.get_indexer([real_oos.index[0]])[0]
+ref_anchor     = real.iloc[anchor_end_pos - 200:anchor_end_pos]
+
+forward_paths = sf.generate(fit.model_id, n_paths=200, horizon=len(real_oos),
+                             anchor_data=ref_anchor)
+
+real_sharpes  = {name: bt(real_oos)["sharpe"] for name, bt in strategies.items()}
+synth_sharpes = {
+    name: float(np.mean([bt(df)["sharpe"] for df in forward_paths.as_dataframes()]))
+    for name, bt in strategies.items()
+}
+
+score = sf.predictive_rank_score(real_sharpes, synth_sharpes)
+print(score.summary())
+print(score.verdict)   # 'well_calibrated' | 'weakly_calibrated' | 'uncalibrated' | 'inverted'
+```
+
+If `score.verdict == "inverted"`, do not deploy on the forward-forecast ranking — the model is misranking strategies on your universe.
+
+See [`SDK.md`](SDK.md#forward-generation--deployment-forecasting) for the full recipe + caveats.
+
+## 7. Async + cross-process workflows
+
+For long fits (~15 min on L4) you may not want to block the kernel:
+
+```python
+handle = sf.fit_async(real, features=list(real.columns), horizon=252)
+# ... do other work, restart the kernel, walk away
+
+# Later (same or different process):
+fit = sf.fetch_result(handle)
+```
+
+Persist the handle across processes:
+
+```python
+import json
+json.dump(handle.to_dict(), open("job-handle.json", "w"))
+
+# Different machine / Python interpreter:
+handle = sf.JobHandle.from_dict(json.load(open("job-handle.json")))
+fit = sf.fetch_result(handle)
+```
+
+See what's in flight + cancel a stuck job:
+
+```python
+sf.list_jobs(status="running")
+sf.cancel_job(handle)              # or pass a raw job_id string
+```
+
+The handle holds the one-shot AES key that decrypts the result — treat it like a secret.
+
+## What's actually happening on the wire
+
+```
+your laptop ──HTTPS──> Sablier API (Cloud Run) ──Cloud Tasks──> GPU worker (Cloud Run + L4)
+     │                                                                   │
+     │   1. POST /v1/jobs                                                 │
+     │   ◄── 2. ephemeral X25519 pubkey + pinned image digest             │
+     │                                                                    │
+     │   3. envelope-encrypt your DataFrame (X25519 + AES-256-GCM)        │
+     │   ──> PUT /v1/jobs/{id}/data ─────────────────────────────────────►│
+     │                                                                    │
+     │                                          4. decrypt in worker RAM, │
+     │                                             train + generate,      │
+     │                                             AES-GCM-encrypt back   │
+     │                                                                    │
+     │   5. GET /v1/jobs/{id}/result ◄───────────────────────────────────-│
+     │   6. decrypt locally                                               │
+     ▼
+backtester
+```
+
+**Today's security posture (alpha)**: TLS 1.3 in transit, KMS-encrypted at rest in GCS, one-shot AES-256-GCM symmetric keys wrapped in an X25519 envelope to the worker's ephemeral pubkey, image-digest pinning verified before keys are released. Workers scale to zero between jobs; encrypted blobs are namespaced per `model_id`.
+
+**What's not yet shipped**: AMD SEV-SNP CPU memory encryption + NVIDIA H100 CC mode GPU memory encryption + NRAS attestation chain. Until those land (v0.8, awaiting GCP H100-CC quota), plaintext customer data exists in the Cloud Run worker's RAM during the ~minutes-long training job — meaningfully better than vanilla cloud SaaS, but not yet immune to a privileged GCP insider inspecting that RAM. The SDK's wire protocol is the same one we'll use post-rollout; customer code doesn't change.
+
+See [`SDK.md`](SDK.md#security-posture-today-alpha) for the full posture + roadmap.
+
+## Try it with the bundled demo dataset — no API key, no network
+
+```python
+import sablier_flow as sf
+
+real = sf.demo_data()                              # daily SPY/QQQ/IWM/TLT + 3 macro series, 2010-2024
+# real = sf.demo_data('us_equities_macro_5min_3mo')  # 5-min intraday alternative
+
+# Continue with sf.fit / sf.generate / sf.validate exactly as in the notebook.
+```
+
+`sablier_flow.demo_data()` returns a clean aligned `pd.DataFrame` from a parquet bundled inside the wheel. Use it to step through the API surface with no third-party data feed required.
+
+## What's not in v1.0
+
+- **Constraints API** — scenario-style stress tests ("what if VIX spends 60 days above 40?") via latent-space optimization. Deferred to v1.1.
+- **Multi-asset beyond equities + macro** — futures, options, credit deferred to v1.5+.
+- **Pre-trained foundation models** — every customer cold-starts training (~10-15 min). Charges ~$1-2 GPU cost per job.
+- **Survivorship-aware universes** — pre-clean your DataFrame before sending.
+
+## Next
+
+- [`SDK.md`](SDK.md) — full reference with every method, kwarg, and return type.
+- [`recipes.md`](recipes.md) — copy-pasteable patterns for common quant workflows.
+- [Examples gallery](examples/00_getting_started.ipynb) — full set of runnable notebooks:
+  - **Getting started** — end-to-end SDK tour (login, fit, validate, generate, robustness, async, management)
+  - **Backtest robustness** — catch lucky-overfit strategies via per-strategy overfit_score on a family
+  - **TSTR predictive rank** — verify synth-ranks predict real-OOS-ranks (Spearman ρ + CI)
+  - **Memorization audit** — confirm synth is genuinely new vs replay-memorizer baseline

@@ -1,0 +1,310 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sablier-flow"
+version = "1.0.13"
+description = "Synthetic alternative-history generation for backtest overfitting detection"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Sablier", email = "team@sablier.it" }]
+keywords = [
+    "quantitative-finance",
+    "backtesting",
+    "synthetic-data",
+    "generative-models",
+    "overfitting",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Default install: thin client only. Customers calling the TEE remotely
+# don't need any GPU stack locally. ~30 MB install footprint. The model
+# itself runs server-side in a hardware-attested confidential GPU and
+# is never shipped to the client.
+#
+# numpy<2 is pinned because some optional engine adapters still rely on
+# numpy 1.x at runtime; we relax this when those adapters upgrade.
+dependencies = [
+    "pandas>=2.0,<3.0",
+    "numpy>=1.24,<2.0",
+    "pyarrow>=14.0",
+    "httpx>=0.27",
+    "cryptography>=42.0",
+    "pydantic>=2.0,<3.0",
+    "typing-extensions>=4.8",
+    "scipy>=1.11",  # used by deflated_sharpe (norm.ppf / norm.cdf / skew / kurtosis)
+    "tqdm>=4.65",   # progress bar for fit/validate polling (0.4.0+)
+]
+
+[project.optional-dependencies]
+# Engine adapters — each is opt-in to keep base install light.
+adapters-backtrader = ["backtrader>=1.9.78"]
+adapters-vectorbt = ["vectorbt>=0.26"]
+# adapters-lean ships day-30; placeholder for now.
+
+# Validation metric suite (Apache-2.0, usable standalone).
+validation = ["scipy>=1.11", "scikit-learn>=1.3"]
+
+# Development.
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.92",
+    "ruff>=0.4.0",
+    "mypy>=1.10",
+    "mkdocs-material>=9.5",
+    "mkdocs-gen-files>=0.5",
+    "mkdocstrings[python]>=0.25",
+    # FastAPI is used by the server/ TEE container but the
+    # SDK-side tests drive the in-process ASGI app via
+    # fastapi.testclient — pull it into [dev] so CI can run
+    # tests/integration/test_server_end_to_end.py without the
+    # heavy [core] extra.
+    "fastapi>=0.110",
+    # SQLAlchemy backs the server-side stores (Cloud SQL in prod;
+    # in-memory SQLite for the test suite). Same [dev]-only rationale
+    # as fastapi above — the SDK itself never pulls it in.
+    "sqlalchemy>=2.0",
+    # google-cloud-tasks is the production CloudTasksDispatcher;
+    # tests mock the client out, so this is only used in real deploys.
+    "google-cloud-tasks>=2.16",
+]
+
+# Everything (for full local-dev installs).
+all = [
+    "sablier-flow[adapters-backtrader,adapters-vectorbt,validation,dev]",
+]
+
+[project.urls]
+# Public URLs only — the source repository is private and customers
+# don't have access. Reach us at team@sablier.it for support / bug
+# reports until a public issue tracker ships.
+Homepage = "https://sablier.ai/flow"
+Documentation = "https://docs.sablier.ai"
+
+[project.scripts]
+sablier-flow = "sablier_flow.cli:main"
+
+# Entry-point group for community-contributed engine adapters. Third
+# parties register here (e.g. `pip install sablier-flow-nautilus`) and
+# the adapter becomes available as `sablier_flow.adapters.<name>`.
+# Discovery is done at attribute-access time in
+# sablier_flow/adapters/__init__.py.
+[project.entry-points."sablier_flow.adapters"]
+# (empty — populated by third-party packages)
+
+[tool.hatch.build.targets.wheel]
+# packages already restricts wheel contents to src/sablier_flow/.
+# internal/, server/ are proprietary code that lives OUTSIDE this packages
+# list and so are excluded by construction. exclude is belt-and-suspenders
+# against anyone moving them under src/.
+packages = ["src/sablier_flow"]
+exclude = [
+    "internal",
+    "internal/**",
+    "server",
+    "server/**",
+    "benchmarks",
+    "benchmarks/**",
+    "infra",
+    "infra/**",
+    "tests",
+    "tests/**",
+    "examples",
+    "examples/**",
+    "docs",
+    "docs/**",
+]
+
+# The wheel automatically picks up src/sablier_flow/_resources/* because
+# it's under the packages list. scripts/build_docs.sh syncs the canonical
+# notebook (examples/00_getting_started.ipynb) and the SDK reference
+# (docs/SDK.md) into that path so the wheel stays current with whatever
+# we ship publicly. Editable installs and direct pip-install both pick up
+# the synced resources because they live inside the package tree.
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/sablier_flow/**",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+exclude = [
+    "internal",
+    "internal/**",
+    "server",
+    "server/**",
+    "benchmarks",
+    "benchmarks/**",
+    "infra",
+    "infra/**",
+    "tests",
+    "tests/**",
+    "examples",
+    "examples/**",
+    "docs",
+    "docs/**",
+]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["server/", "benchmarks/", "infra/", "src/sablier_flow/_resources/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "ARG", "RUF"]
+ignore = [
+    "E501",   # line length — handled by formatter
+    # Ambiguous-character rules flag intentional mathematical notation
+    # (ν, σ, ×, etc.) inherited from the original Sablier backend. The
+    # symbols are meaningful (Student-t ν, standard deviation σ); rewriting
+    # them as ASCII would obscure the math without improving anything.
+    "RUF001", # ambiguous unicode in string
+    "RUF002", # ambiguous unicode in docstring
+    "RUF003", # ambiguous unicode in comment
+    # typing.Dict/List/Tuple/Optional → modern syntax. The legacy code
+    # we moved verbatim from sablier-backend uses old-style annotations;
+    # enforcing modernization here would create a massive churn diff for
+    # zero behavior change and drift from the platform's existing style.
+    # Tighten when we have the bandwidth for the whole rewrite.
+    "UP006",  # use dict instead of Dict
+    "UP035",  # use modern typing imports (typing.Dict deprecated)
+    "UP045",  # use X | None instead of Optional[X]
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ARG", "B008"]
+# Example scripts ship as customer-facing reference code — they prize
+# readability over strict lint compliance. ARG (unused args from
+# overridden signatures), B023 (late-binding closure idiom that
+# is *the* documented pattern for `lambda f=f, s=s: ...`), and E701
+# (single-line if guards inside notebook cells) all flag intentional
+# style choices we want to keep visible to readers.
+# analytics/family.py: intentional unused-arg signatures (executor /
+# max_workers placeholders kept for future thread/process wiring without
+# breaking the public signature).
+"src/sablier_flow/analytics/family.py" = ["ARG001"]
+# Transport InMemoryTransport stubs accept the full Protocol signature
+# but ignore most kwargs by design (in-memory fake returns canned data).
+# _NullRenderer in client.py is the null-object pattern for progress UI
+# (signature must match the real renderer; body intentionally returns None).
+"src/sablier_flow/client/transport.py" = ["ARG002"]
+"src/sablier_flow/client/client.py" = ["ARG002"]
+# Verbatim-moved legacy files (core/* and validation/metrics/*) inherit
+# the platform's looser style — trailing whitespace, mixed import styles,
+# unused-on-purpose imports for namespace re-exports, deliberate shape
+# unpackings used as documentation, etc. Enforcing strict ruff here
+# would generate a huge churn diff against code we're going to keep
+# refactoring as we extract pipeline functions in B.2d-f. New SDK code
+# (io/, client/, adapters/, the pipeline/{train,generate,validate,memorize}
+# modules we write fresh) is held to the strict rules.
+"src/sablier_flow/core/**" = [
+    "E402",   # imports after docstring/conditional torch try-import
+    "F401",   # unused imports in __init__.py namespace re-exports
+    "F541",   # f-string without placeholder
+    "F841",   # unused locals (often kept for debug/clarity)
+    "W291",   # trailing whitespace
+    "W293",   # whitespace on blank lines
+    "I001",   # import sort order
+    "B",      # bugbear (legacy code has B008 default-arg-mutable etc.)
+    "SIM",    # simplification suggestions
+    "ARG",    # unused args (kept for API compat with callers)
+    "RUF015", # next(iter(...)) suggestion
+    "RUF022", # __all__ not sorted
+    "RUF059", # unused unpacked (e.g. `B, T, D = x.shape` for docs)
+    "UP037",  # quoted annotation suggestion
+    "C420",   # unnecessary dict-comp
+]
+"src/sablier_flow/validation/**" = [
+    "E402", "F401", "F541", "F841",
+    "W291", "W293", "I001",
+    "B", "SIM", "ARG",
+    "RUF015", "RUF022", "RUF059",
+    "UP037", "C420",
+]
+# test files use `torch = pytest.importorskip("torch")` followed by torch-
+# dependent imports — that's the canonical pattern, but ruff flags E402.
+"tests/unit/test_calendar.py" = ["I001", "F401"]
+"tests/unit/test_constraints.py" = ["I001", "E402"]
+"tests/unit/test_config.py" = ["I001"]
+"tests/unit/test_model.py" = ["I001", "F401", "E402"]
+"tests/unit/test_oom_handling.py" = ["I001", "B904"]
+"tests/unit/test_io_protocols.py" = ["E402"]
+"tests/integration/**" = ["E402"]
+# Reference notebooks have their own style: backtrader's `params = dict(...)`
+# is its public API and shouldn't be rewritten. Class-level mutable defaults
+# are similarly part of the third-party engine surface. ruff's strict rules
+# would force unnatural rewrites that confuse the demo.
+"examples/**" = ["C408", "C416", "RUF012", "ARG", "E402", "RUF059", "B905", "B023", "E701", "F", "I001"]
+# Driver scripts that set up warnings/sys.path *before* importing torch
+# legitimately have imports below top-of-file. They also use unpacked
+# tuples that ruff flags as RUF059.
+"scripts/**" = ["E402", "RUF059", "B905"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+exclude = ["server/", "benchmarks/", "infra/", "examples/", "docs/"]
+# numpy.ndarray's generic typing (np.ndarray[Any, np.dtype[Any]]) is still
+# maturing — annotating every array site with the full generic is more
+# noise than it's worth. mypy strict-mode default selects "type-arg" which
+# fires on every unparameterized ndarray. Disable globally.
+disable_error_code = ["type-arg"]
+
+# Verbatim-moved legacy code uses old-style typing (Dict/List/Optional),
+# subclasses torch.nn.Module (which mypy can't introspect), and is decorated
+# with @torch.no_grad() (untyped decorator).
+#
+# The pipeline/{train,generate,validate}.py modules — though net-new code —
+# call into torch heavily (autocast, tensor ops, optimizer hooks) and hit
+# the same mypy-vs-torch-stub-quality issues. Properly typing against torch
+# would require us to vendor or build torch stubs, which is a larger
+# investment than this v1 warrants. Held strict for everything else:
+# io/, pipeline/{memorize,_gpu_utils}, client/, adapters/, server/.
+[[tool.mypy.overrides]]
+module = [
+    "sablier_flow.core.*",
+    "sablier_flow.validation.*",
+    "sablier_flow.pipeline.train",
+    "sablier_flow.pipeline.generate",
+    "sablier_flow.pipeline.validate",
+]
+ignore_errors = true
+
+# Pipeline modules that AREN'T torch-heavy stay strict.
+# (memorize is numpy/sklearn only; _gpu_utils is a tiny error-detection helper.)
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+# Coverage is enabled only when pytest-cov is installed (i.e. with [dev] extra).
+# Tests still run without the [dev] extra — just no coverage report.
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "gpu: requires a CUDA-capable GPU (skipped in default CI)",
+    "integration: hits external services (DB / GCS / TEE)",
+    "slow: long-running tests",
+]
+asyncio_mode = "auto"

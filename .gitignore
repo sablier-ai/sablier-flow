@@ -1,0 +1,121 @@
+# Build-time-generated; baked into the wheel by .github/workflows/release.yml.
+# Never committed to the repo — the digest comes from the actual built image.
+src/sablier_flow/_pinned_image_digest.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Testing / coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+htmlcov/
+
+# Type checkers
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Docs
+site/
+docs/_build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+*.nbconvert.ipynb
+
+# Notebooks tend to balloon — only commit cleaned versions
+examples/**/scratch*.ipynb
+
+# Benchmarks: q-factor data is downloaded at runtime, not committed
+benchmarks/hxz/data/
+benchmarks/**/*.parquet
+benchmarks/**/*.csv
+benchmarks/**/results/
+
+# Secrets / credentials — should NEVER be committed
+.env
+.env.*
+*.pem
+!src/sablier_flow/_amd_roots/*.pem
+*.key
+secrets/
+
+# Local TEE simulation artifacts
+server/dev-artifacts/
+*.attestation
+
+# Compiled artifacts
+*.pkl
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.tar.gz
+*.whl
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Terraform
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.backup
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+
+# PyPI credentials — defensive (real file lives in ~/.pypirc)
+.pypirc
+*.pypirc
+.env
+.env.*
+
+# Generated demo/report artifacts from local dev runs.
+# Any output dir / report from running an example notebook or script
+# should land under one of these patterns so it can't get committed.
+examples/*_output/
+examples/**/*.html
+examples/**/*.url
+examples/**/*.crt
+sma_crossover_audit.html
+.vercel
+
+# Notebooks are sourced from examples/ and copied to docs/examples/ at build time
+docs/examples/
