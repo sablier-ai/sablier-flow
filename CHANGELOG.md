@@ -7,25 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.17] - 2026-06-01 — numbers consistency patch
+
+### Fixed
+- README Examples table headline numbers now lock to the actual shipped
+  notebook outputs (not transcribed values from a prior run):
+  - N1: 29 of 30 lucky vs 0 of 12 honest at threshold 0.7
+        (honest max = 0.690, lucky min = 0.670, lucky max = 0.875)
+  - N2: Spearman ρ = +0.7687, 95% CI [+0.47, +0.95], p = 1.14e-05
+- examples/02_tstr_predictive_rank.ipynb Section 8 verdict markdown
+  realigned with the executed-output cell (same numbers as N2 above).
+- src/sablier_flow/__init__.py docstring ticker list now correctly
+  reads 'SPY/QQQ/IWM/TLT plus 3 macro features (VIX, TNX, DXY)'.
+- docs/quickstart.md: dropped data_types={c:'price' for c in df.columns}
+  antipattern (matches README Quickstart's df.attrs['data_types']).
+- v1.0.13 GitHub release body updated to match current numbers.
+
 ## [1.0.16] - 2026-06-01 — docs/notebook polish
 
 ### Fixed
 - examples/02_tstr_predictive_rank.ipynb Section 8 markdown numbers
-  realigned with the executed cell output (ρ = +0.78, CI [+0.51, +0.93]).
+  realigned with the executed cell output (see 1.0.17 for the
+  current canonical values).
 - src/sablier_flow/__init__.py demo_data date range corrected to 2010-2023.
 - examples/03_memorization_audit.ipynb re-executed against a clean 1.0.16
   install (1.0.15 sdist was published from a build that ran before the
   notebook re-execute completed).
-- CHANGELOG 1.0.15 entry merged dual ### Changed sections; TSTR p-value
-  corrected (actual is ~6.7e-06).
+- CHANGELOG 1.0.15 entry merged dual ### Changed sections.
 
 ## [1.0.15] - 2026-06-01 — docstring + notebook pin cleanup
 
 ### Changed
-- Live notebook numbers refreshed against 1.0.15 (executed cleanly end-to-end):
-  - N1: per-strategy `overfit_score` flags **30/30** lucky strategies vs **0/12** honest false positives at threshold 0.7 (was 29/30 vs 1/12 on 1.0.14 run).
-  - N2: Spearman ρ = +0.78, 95% bootstrap CI [+0.51, +0.93] (was +0.74 on 1.0.14 run).
-  - N3: NN-distance ratio R = 0.9309 (unchanged).
+- Live notebook numbers refreshed against 1.0.15 (executed cleanly end-to-end).
+  Note: the transcribed values shipped in this entry were later found to
+  disagree with the actual executed-cell outputs; see 1.0.17 for the
+  canonical numbers (N1: 29/30 lucky vs 0/12 honest at threshold 0.7;
+  N2: Spearman ρ = +0.7687, 95% CI [+0.47, +0.95]; N3: R unchanged).
 - README cosmetic refinements: demo dataset date range (2010-2023, actual),
   TSTR predictive-rank reporting now leads with the bootstrap CI from the
   notebook, LEAN adapter wording ("CSV export adapter" instead of
@@ -372,7 +389,9 @@ release forward.
     - `tests/integration/test_server_end_to_end.py` — Client → HttpxTransport → real FastAPI app via TestClient → GenerationResult.
 - **Demo notebook** `examples/01_alternative_versions.ipynb`.
 
-[Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.15...HEAD
+[Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.17...HEAD
+[1.0.17]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.17
+[1.0.16]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.16
 [1.0.15]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.15
 [1.0.14]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.14
 [1.0.13]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.13

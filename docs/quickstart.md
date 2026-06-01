@@ -45,7 +45,7 @@ for `df = pd.read_parquet("my_universe.parquet")` when you're ready).
 ```python
 import sablier_flow as sf
 df = your_data  # multivariate time series, DatetimeIndex
-fit  = sf.fit(df, features=df.columns.tolist(), data_types={c: 'price' for c in df.columns}, horizon=21)
+fit  = sf.fit(df, features=df.columns.tolist(), data_types=df.attrs['data_types'], horizon=21)
 gen  = sf.generate(fit.model_id, n_paths=100, like=df.iloc[-21:])
 synth_results = [my_backtest(d) for d in gen.as_dataframes()]
 verdict = sf.robustness(my_backtest(df), synth_results, primary_metric='sharpe')
@@ -224,7 +224,7 @@ For the full security posture (what's encrypted, what isn't, what's on the roadm
 ```python
 import sablier_flow as sf
 
-real = sf.demo_data()                              # daily SPY/QQQ/IWM/TLT + 3 macro series, 2010-2024
+real = sf.demo_data()                              # daily SPY/QQQ/IWM/TLT + 3 macro series, 2010-2023
 # real = sf.demo_data('us_equities_macro_5min_3mo')  # 5-min intraday alternative
 
 # Continue with sf.fit / sf.generate / sf.validate exactly as in the notebook.

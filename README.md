@@ -68,9 +68,9 @@ Live empirical demos with executed outputs baked in — open them on GitHub and 
 
 | Notebook | What it proves |
 |---|---|
-| [📓 **Backtest Robustness**](examples/01_backtest_robustness.ipynb) | At the **0.7** `overfit_score` threshold: flags **30 of 30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise search; max honest = 0.635, max lucky = 0.875) vs **0 of 12** false positives on a designed honest family |
-| [📓 **TSTR Predictive Rank**](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.78**, 95% CI **[+0.51, +0.93]** — synth ranks predict real OOS ranks |
-| [📓 **Memorization Audit**](examples/03_memorization_audit.ipynb) | NN-distance ratio **R = 0.9309** vs replay-floor R = 0.0161 — **57.8× separation**, synth is genuinely new |
+| [📓 **Backtest Robustness**](examples/01_backtest_robustness.ipynb) | At the **0.7** `overfit_score` threshold: flags **29 of 30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise pool; lucky family min = 0.670, max = 0.875) vs **0 of 12** false positives on a designed honest family (max = 0.690) |
+| [📓 **TSTR Predictive Rank**](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.7687**, 95% bootstrap CI **[+0.47, +0.95]**, p = 1.1e-05, n = 24 — synth ranks predict real OOS ranks |
+| [📓 **Memorization Audit**](examples/03_memorization_audit.ipynb) | NN-distance ratio **R = 0.9312** vs replay-floor R = 0.0161 — **57.8× separation**, synth is genuinely new |
 | [📓 **Getting Started**](examples/00_getting_started.ipynb) | End-to-end SDK tour: login → fit → validate → generate → robustness |
 
 ## Why use it
