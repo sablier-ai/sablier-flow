@@ -84,7 +84,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "1.0.19"
+__version__ = "1.0.20"
 
 __all__ = [
     "ALLOWED_DATA_TYPES",

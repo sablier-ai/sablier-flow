@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.20] - 2026-06-01 — four ergonomics + safety fixes from co-founder feedback
+
+### Security
+- **`sf.login()` no longer risks leaking the full API key to terminal
+  scrollback.** Previously the SDK trusted whatever the server returned
+  in the `key_prefix` field and printed it verbatim. On accounts where
+  the server (correctly) shipped a 12-char prefix this was fine, but
+  on accounts where the server shipped the full secret in that field,
+  the full key landed in stdout and any scrollback share / CI log /
+  agent-task-output copy. The SDK now hard-truncates to 12 chars
+  client-side regardless of what the server sends.
+
+### Fixed
+- **`sf.estimate_cost(...)` no longer returns the misleading
+  `estimated_duration_s` field.** The credit estimate is deterministic
+  (formula based on dataset shape × horizon × n_paths); the duration
+  heuristic was running ~4-5× too high in practice (observed: 52 min
+  predicted vs 11 min actual on a 7-feature 14-year fit), and was
+  anchoring customer + agent expectations on a bad number. Field
+  removed from the response dict. The underlying wire dataclass keeps
+  the field for back-compat with stored responses.
+- **`f"{deflated_sharpe_report:.4f}"` no longer crashes with
+  `TypeError`.** Added a `__format__` method on `DeflatedSharpeReport`
+  that routes numeric format specs to the headline `realistic` DSR
+  (matches the class docstring which calls it "the headline number
+  Sablier puts forward"). Empty spec still gives the full repr so
+  `f"{report}"` is unchanged.
+- **`evaluate_family` now warns when the real-data window length and
+  the synthetic horizon differ.** Previously the real backtest ran on
+  the full `real_data` (e.g. 3500 bars) while each synthetic backtest
+  ran on `gen.horizon` bars (default 252), making the synthetic
+  distribution a biased null for the DSR-vs-real comparison. PBO is
+  unaffected (it walks the real series alone). The warning points
+  customers at `like=real_data.iloc[-gen.horizon:]` or manually
+  windowing `real_data` to match.
+
 ## [1.0.19] - 2026-06-01 — forward-forecast anchoring + docs sweep
 
 ### Fixed

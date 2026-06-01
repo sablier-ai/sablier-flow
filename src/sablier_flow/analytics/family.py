@@ -607,6 +607,32 @@ def evaluate_family(
         resolved_model_id = fit_res.model_id
     gen = _generate(resolved_model_id, n_paths=n_paths, **gen_kwargs)
 
+    # 1.0.20 — horizon-mismatch warning. The customer's backtest was
+    # just run on the FULL ``real_data`` above (line ~ "real_metrics
+    # = …"), producing a Sharpe over ``len(real_data)`` bars. The
+    # synthetic side will be ``n_paths × gen.horizon`` bars. When those
+    # two lengths differ, the real and synthetic Sharpes are computed
+    # on different sample sizes — fine for PBO (CSCV walks the real
+    # series alone), but a methodological footgun for the DSR-vs-synth
+    # comparison: the synthetic distribution is a poor null for a real
+    # Sharpe computed on 14× as many bars. Emit a UserWarning so the
+    # customer can either window ``real_data`` to ``gen.horizon`` or
+    # pass ``like=real_data.iloc[-gen.horizon:]`` to ``generate``.
+    if len(real_data) != gen.horizon:
+        warnings.warn(
+            f"evaluate_family: real_data has {len(real_data)} bars but the "
+            f"synthetic horizon is {gen.horizon}. The real Sharpe is computed "
+            f"over {len(real_data)} bars while each synthetic Sharpe is "
+            f"computed over {gen.horizon} bars — different sample sizes mean "
+            f"the synthetic distribution is a biased null for the DSR-vs-real "
+            f"comparison. PBO is unaffected. To match horizons, either pass "
+            f"`like=real_data.iloc[-{gen.horizon}:]` (truncates synth to your "
+            f"window) or window `real_data` yourself to {gen.horizon} bars "
+            f"before calling.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     # --- 3. Materialise synth DataFrames once, run every strategy on each
     synth_dfs = gen.as_dataframes(index=_aligned_index(real_data, gen.horizon))
 

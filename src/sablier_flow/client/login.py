@@ -392,7 +392,13 @@ def login(
     # so a terminal that's line-buffering still shows the line.
     if approver_email:
         print(f"Logged in as {approver_email}.")
-    print(f"API key prefix: {key_prefix or 'sk_live_...'}")
+    # Defensive truncation: we trust the server to ship a short
+    # `key_prefix` (~12 chars), but if a server bug or older deploy ever
+    # ships the full secret here, we MUST NOT leak it to terminal
+    # scrollback. Truncate to the canonical 12 chars regardless of what
+    # the server sent.
+    safe_prefix = (key_prefix or "sk_live_")[:12]
+    print(f"API key prefix: {safe_prefix}...")
     print(f"Endpoint: {endpoint}")
     if endpoint != DEFAULT_ENDPOINT:
         print(

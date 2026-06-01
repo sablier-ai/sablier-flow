@@ -156,6 +156,25 @@ class DeflatedSharpeReport:
         eyes open, but the deploy gate should default to strict."""
         return self.realistic >= 0.95
 
+    def __format__(self, spec: str) -> str:
+        """Make ``f"{report:.4f}"`` (and similar) format the headline
+        ``realistic`` DSR.
+
+        Without this, customers who naturally write
+        ``print(f"DSR = {verdict.deflated_sharpe():.4f}")`` get a
+        ``TypeError: unsupported format string passed to
+        DeflatedSharpeReport.__format__`` because dataclasses don't
+        provide a numeric ``__format__`` by default.
+
+        Empty spec falls back to the default repr (preserves
+        ``str(report)`` / ``f"{report}"`` behavior); any numeric spec
+        routes to the realistic DSR — the headline number documented
+        as ``the headline number Sablier puts forward`` in the
+        class docstring."""
+        if spec == "":
+            return repr(self)
+        return format(self.realistic, spec)
+
     def to_dict(self) -> dict[str, float | int]:
         return {
             "observed_sr": self.observed_sr,

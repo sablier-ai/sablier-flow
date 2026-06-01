@@ -978,7 +978,18 @@ class Client:
             horizon=horizon,
             n_paths=n_paths,
         )
-        return self._transport.estimate_cost(body).model_dump()
+        response = self._transport.estimate_cost(body).model_dump()
+        # 1.0.20 — strip the server-side `estimated_duration_s` heuristic
+        # from the response dict. The credit estimate is deterministic
+        # (n_features × n_rows × horizon formula); the duration estimate
+        # is a heuristic that runs 4-5× too high in practice (observed:
+        # 52 min predicted vs 11 min actual on a 7-feature 14-year fit),
+        # and surfacing it to customers — or to AI agents introspecting
+        # the response — anchored expectations on a misleading number.
+        # Wire field kept on the dataclass for back-compat; just not
+        # exposed in the user-facing dict any more.
+        response.pop("estimated_duration_s", None)
+        return response
 
     # ------------------------------------------------------------------
     # The full attest-encrypt-poll-decrypt lifecycle. Kept private so
