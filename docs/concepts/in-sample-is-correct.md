@@ -64,23 +64,21 @@ To make this empirically verifiable, every `sablier-flow` model reports a **memo
   - `0.50 – 0.80` — borderline (synth tighter than training; cross-check coverage_*).
   - `< 0.50` — pathological (synth closer to training than training is to itself). Memorization detected.
 
-The full verdict is exposed as `MemorizationReport.risk` ∈ `{"low", "medium", "high"}`. The SDK refuses to return synthetic samples when risk is `high` unless the customer explicitly opts into `strict_oos_mode`, which retrains the generator on a held-out slice.
+The full verdict is exposed as `ValidationReport.memorization_risk` ∈ `{"low", "medium", "high"}` on the result of `sf.validate(model_id)`, plus the raw ratio at `ValidationReport.memorization_nn_distance_ratio`. The SDK does not gate `generate(...)` on this verdict — the customer reads it and decides whether to keep using the model, retrain on a smaller in-sample slice, or partition the universe into per-asset-class sub-models. The signal is the falsifiability mechanism; the action is the customer's.
 
-This makes the trust story falsifiable: every customer can verify the memorization risk for their own model, on their own data.
-
-## When you DO want strict-OOS mode
+## When you want a held-out FLOW fit
 
 The default works for the typical case: a rule-based or factor strategy with a small parameter count. The strategy didn't itself "see" the training data in any meaningful sense — its parameters were chosen by the researcher.
 
 The exception: **the strategy itself is an ML model trained on the same window.** If both FLOW and a deep-neural-net strategy were trained on 2010-2023, both could have learned the same noise features, and FLOW's synthetic samples would falsely confirm the strategy's robustness.
 
-For these customers we offer an opt-in `strict_oos_mode=True` parameter that trains FLOW on a held-out slice the strategy never touched. The synthetic distribution then provides a clean OOS evaluation. The tradeoff: less statistical power (smaller training window) and the customer has to specify the held-out range.
+For these customers the recipe is to slice the DataFrame manually and call `sf.fit` only on the window the strategy hasn't touched — e.g. `fit_train = real.loc[:'2018']` for a strategy validated on 2019-2023. The synthetic distribution then provides a clean OOS evaluation. The tradeoff: less statistical power (smaller training window) and the customer carries the responsibility for picking a defensible held-out range.
 
 ## Summary
 
 | Concern | Resolution |
 |---|---|
 | "Isn't training on the same period contamination?" | No — the strategy never sees training data; only new samples from the learned distribution. |
-| "What if the generator memorizes?" | Reported as a per-model risk score; SDK refuses to return synthetic if `risk='high'`. |
-| "What about ML-trained strategies?" | Opt into `strict_oos_mode=True` for a held-out-trained generator. |
+| "What if the generator memorizes?" | Reported as `ValidationReport.memorization_risk` after `sf.validate(model_id)`; partition large universes or retrain on a smaller slice if `'high'`. |
+| "What about ML-trained strategies?" | Fit FLOW on a window your ML strategy didn't see (`sf.fit(real.loc[:'2018'], ...)`). |
 | "Is this standard?" | Yes — López de Prado, Bailey, AWS, TimeGAN, TSGBench all use in-sample training. |

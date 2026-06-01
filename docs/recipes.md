@@ -201,7 +201,7 @@ print(sablier_flow.available_demo_datasets())        # list other bundled option
 | Columns | Numeric (`float32` or `float64`), one per feature |
 | Naming | Column names are arbitrary strings; we use them as `feature_names` in the response |
 | Missing data | Drop or forward-fill before calling — the SDK rejects NaN rows |
-| Length | At least 252 rows (1y daily) for stable training; 1000+ recommended; 5000+ is the empirical sweet spot for daily equity panels (see `sf.demo_data("us_equities_macro_2010_2024")` — ~3500 bars across 7 features) |
-| Frequency | Daily is the default. Other frequencies work but the `periods_per_year` arg on `quick_validate` should match (252 for daily, 12 for monthly, etc.). |
+| Length | At least 252 rows (1y daily) for stable training; 1000+ recommended; 5000+ is the empirical sweet spot for daily equity panels (see `sf.demo_data()` — ~3500 bars across 7 features) |
+| Frequency | Auto-detected from the index via `pd.infer_freq` (median-bar-Δt fallback for irregular indices). Allowed values: `'daily'`, `'weekly'`, `'monthly'`, `'quarterly'`. Pass `frequency=` to `sf.fit` to override. Intraday is deferred to 1.1.0. |
 
 The SDK does not know what your features mean — it learns the joint distribution from the rows you give it. Equities, FX, futures, credit spreads, vol surfaces, yields, even non-financial time series (energy demand, weather, retail sales) all work the same way.

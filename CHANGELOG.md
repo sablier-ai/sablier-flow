@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.19] - 2026-06-01 — forward-forecast anchoring + docs sweep
+
+### Fixed
+- **`Client.generate` / `Client.generate_async`: forward-forecast paths
+  now anchor at "today".** Previously, when `anchor_data=` was passed
+  (and `like=` wasn't), `anchor_prices` was never sent to the server
+  and the server fell back to the checkpoint's stored `last_prices`
+  (anchored at training end). The result: forward synthetic paths
+  started at the price level from the *first* bar of `anchor_data`
+  rather than the last bar, so a fan chart drawn against
+  `real.iloc[-90:]` showed an obvious ~20% gap between where the
+  realized line ends and where the synthetic continuation begins. Fix:
+  when `anchor_data` is supplied and `like` isn't, derive
+  `anchor_prices = anchor_data.iloc[-1].to_dict()` — same mechanism as
+  the `like=` branch already used, just for the forward-generation use
+  case. Applies to both the sync and async generate paths.
+
+### Changed (docs)
+- `docs/concepts/data-sourcing.md` and
+  `docs/concepts/engine-integration.md` snippets now use the real
+  `sf.fit(...)` → `sf.generate(model_id, ...)` surface (was
+  `client.alternative_versions(...)` — a method that does not exist;
+  customers copying the old snippet would have hit `AttributeError`).
+- `docs/concepts/in-sample-is-correct.md` aligns with the actual SDK:
+  `ValidationReport.memorization_risk` (was `MemorizationReport.risk`),
+  and the recommended pattern for ML-trained-strategy customers is
+  manually slicing the DataFrame before `sf.fit` (was a nonexistent
+  `strict_oos_mode=True` parameter).
+- `docs/SDK.md` `JobHandle.kind` enum now lists `'fit'` instead of
+  `'train'` (matches the actual kind string the SDK emits).
+- `docs/concepts/data-sourcing.md` now correctly says intraday
+  classification is deferred to 1.1.0 (the 5-min demo dataset is a
+  preview-only sample, not a fit target — matches what the SDK
+  actually enforces in `_require_frequency`).
+- `docs/recipes.md` Frequency row no longer references the nonexistent
+  `quick_validate` / `periods_per_year` — replaced with the real
+  `frequency=` kwarg on `sf.fit`.
+- `examples/00_getting_started.ipynb`: the estimate_cost code cell
+  dropped the stale `~{estimated_duration_s/60} min` print line and
+  switched from `kind='train'` (which raised in 1.0.18+) to
+  `kind='fit'`. The 2010-2024 prose reference corrected to 2010-2023.
+- `examples/02_tstr_predictive_rank.ipynb` and
+  `examples/03_memorization_audit.ipynb`: stripped residual
+  wall-clock claims ("fit takes ~5 min", "≲ 15 minutes") so the
+  no-time-prediction stance is consistent across every example.
+- `examples/03_memorization_audit.ipynb`: simplified the defensive
+  `getattr(_c, 'available', None) if not isinstance(_c, dict) else
+  _c.get('available')` dance to plain attribute access — Pydantic
+  `CreditsBalance` is now stable, the dual-path was leftover from the
+  pre-1.0.13 migration.
+
 ## [1.0.18] - 2026-06-01 — agent-introspection + honest cost surface
 
 ### Added

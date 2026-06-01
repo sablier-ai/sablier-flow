@@ -32,8 +32,13 @@ real_data = pd.read_parquet("my_universe_2010_2023.parquet")
 print(real_data.shape)       # (3000, 50) — 3000 rows × 50 features
 print(real_data.dtypes)      # all numeric
 
-client = sablier_flow.Client(api_key="...")
-synthetic = client.alternative_versions(real_data, n_paths=1000)
+import sablier_flow as sf
+
+sf.login()                                      # or set SABLIER_FLOW_API_KEY
+fit  = sf.fit(real_data, features=list(real_data.columns),
+              data_types=real_data.attrs["data_types"], horizon=252)
+gen  = sf.generate(fit.model_id, n_paths=1000, like=real_data.iloc[-252:])
+synthetic = gen.as_dataframes()                 # list[pd.DataFrame], one per alt-history
 ```
 
 That's it. No schema registration, no field-mapping config, no "please contact our data team."
@@ -154,11 +159,11 @@ The error messages point to the exact problem so the customer's data team can fi
 
 ## Frequency
 
-`sf.fit` auto-detects the bar period from your `DatetimeIndex` via `pd.infer_freq` (with a median-bar-delta fallback for irregular indices) and classifies the data into one of `daily` / `weekly` / `monthly` / `intraday`. The server then injects the matching sin/cos cyclical embeddings: day-of-year for daily/weekly/monthly; minute-of-day + day-of-week + day-of-year for intraday. Pass `frequency=` to override.
+`sf.fit` auto-detects the bar period from your `DatetimeIndex` via `pd.infer_freq` (with a median-bar-delta fallback for irregular indices) and classifies the data into one of `daily` / `weekly` / `monthly` / `quarterly`. Pass `frequency=` to override.
 
-The architecture defaults (`horizon`, `obs_length`) are tuned for daily — the unit is *bars*, not days, so for intraday data you'll want to pass `horizon` explicitly. The bundled intraday demo dataset (`sf.demo_data('us_equities_macro_5min_3mo')`) is a good reference for what works.
+Intraday classification (minute / 5-min / 15-min bars) is **deferred to 1.1.0** when the cyclical minute-of-day / day-of-week embeddings ship. The bundled `sf.demo_data('us_equities_macro_5min_3mo')` is a preview-only sample so you can see the data shape today; running `sf.fit` on a 5-min DataFrame raises during the schema check. For now, aggregate to daily bars before fitting.
 
-Intraday (minute / 5-min / 15-min bars) is supported. Caveat: the model emits a single price track per feature per path, not full OHLCV. Strategies that key off intra-bar high/low/volume see flat OHLC on synthetic. For HFT workflows, consider feeding tick-aggregated returns directly.
+When intraday lights up: the model will emit a single price track per feature per path, not full OHLCV. Strategies that key off intra-bar high/low/volume will see flat OHLC on synthetic.
 
 ## Multiple asset classes in one model
 

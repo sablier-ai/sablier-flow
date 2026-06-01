@@ -355,7 +355,7 @@ Pass `features=None` to opt out and fit on every numeric column (no coverage che
 
 ### Async jobs — `fit_async` / `fetch_result` / `list_jobs` / `cancel_job`
 
-Every sync method has an async sibling that returns a `JobHandle` immediately after the encrypted upload completes. The handle carries the `job_id`, the kind (`'train'` / `'generate'` / `'validate'`), and the one-shot AES key needed to decrypt the result.
+Every sync method has an async sibling that returns a `JobHandle` immediately after the encrypted upload completes. The handle carries the `job_id`, the kind (`'fit'` / `'generate'` / `'validate'`), and the one-shot AES key needed to decrypt the result.
 
 ```python
 handle = sf.fit_async(real, features=list(real.columns),
@@ -1019,7 +1019,7 @@ Returned by `sf.fit_async` / `sf.generate_async` / `sf.validate_async`. Persista
 @dataclass(frozen=True)
 class JobHandle:
     job_id: str
-    kind: str                # 'train' | 'generate' | 'validate'
+    kind: str                # 'fit' | 'generate' | 'validate'
     result_key_b64: str      # standard-base64 of the AES-256-GCM key — treat as a secret
 
     def to_dict(self) -> dict[str, str]: ...

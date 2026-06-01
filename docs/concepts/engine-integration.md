@@ -7,13 +7,19 @@ So `sablier-flow` doesn't have a "Sablier strategy language." It's a data layer,
 ## The universal contract
 
 ```python
-synthetic = client.alternative_versions(real_data, n_paths=1000)
-synth_dfs = sablier_flow.adapters.dataframe.as_dataframes(synthetic, index=test_dates)
-# synth_dfs is list[pd.DataFrame], each with the same columns + index as real_data.
+import sablier_flow as sf
+
+sf.login()
+fit       = sf.fit(real_data, features=list(real_data.columns),
+                   data_types=real_data.attrs["data_types"], horizon=252)
+synthetic = sf.generate(fit.model_id, n_paths=1000, like=real_data.iloc[-252:])
+synth_dfs = synthetic.as_dataframes()
+# synth_dfs is list[pd.DataFrame], each with the same columns + index as the
+# `like=` window you passed in. Your existing backtest function runs unchanged.
 
 real_pnl   = my_backtest(real_data)
 synth_pnls = [my_backtest(df) for df in synth_dfs]
-report     = sablier_flow.robustness(real_pnl, synth_pnls)
+report     = sf.robustness(real_pnl, synth_pnls, primary_metric="sharpe")
 ```
 
 The last three lines are the entire customer integration. Everything below is glue for specific engines that don't natively consume pandas DataFrames.
@@ -27,8 +33,8 @@ Zero adapter needed. Synthetic paths come out as DataFrames. Use them.
 ### [backtrader](https://github.com/mementum/backtrader)
 
 ```python
-from sablier_flow.adapters.backtrader import as_backtrader_feeds
-feeds = as_backtrader_feeds(synthetic, ticker_column="SPY", index=test_dates)
+from sablier_flow.adapters import as_backtrader_feeds  # requires [adapters-backtrader] extra
+feeds = as_backtrader_feeds(synthetic, ticker_column="SPY")
 for feed in feeds:
     cerebro = bt.Cerebro()
     cerebro.adddata(feed)
@@ -41,8 +47,8 @@ OHLCV is synthesized from close prices (open=high=low=close, vol=placeholder). I
 ### [vectorbt](https://github.com/polakowo/vectorbt)
 
 ```python
-from sablier_flow.adapters.vectorbt import as_vectorbt_panel
-panel = as_vectorbt_panel(synthetic, ticker_column="SPY", index=test_dates)
+from sablier_flow.adapters import as_vectorbt_panel  # requires [adapters-vectorbt] extra
+panel = as_vectorbt_panel(synthetic, ticker_column="SPY")
 # panel is a wide DataFrame (T × n_paths)
 pf = vbt.Portfolio.from_signals(panel, entries, exits, freq="D")
 ```
@@ -54,8 +60,8 @@ Especially useful for parameter sweeps × synthetic paths — vectorbt broadcast
 LEAN consumes a per-symbol CSV directory tree. The `lean` adapter writes one such tree per synthetic path:
 
 ```python
-from sablier_flow.adapters.lean import write_lean_csv_universe
-write_lean_csv_universe(synthetic, "lean-data/", index=test_dates)
+from sablier_flow.adapters import write_lean_csv_universe   # ships in core, no extra needed
+write_lean_csv_universe(synthetic, "lean-data/")
 # Produces:
 #   lean-data/path_0000/equity/usa/daily/SPY.csv
 #   lean-data/path_0001/equity/usa/daily/SPY.csv
@@ -72,13 +78,16 @@ The pattern: write a *one-time* shim that takes a `synthetic.paths_prices` NumPy
 
 ```python
 import numpy as np
+import sablier_flow as sf
 
-result = client.alternative_versions(real_data, n_paths=1000)
+fit    = sf.fit(real_data, features=list(real_data.columns),
+                data_types=real_data.attrs["data_types"], horizon=252)
+result = sf.generate(fit.model_id, n_paths=1000, like=real_data.iloc[-252:])
 # result.paths_prices is (n_paths, horizon, n_features) np.float32
 arr = result.paths_prices
 
 # Write a custom binary your engine reads
-for i in range(result.n_paths):
+for i in range(arr.shape[0]):
     with open(f"synthetic_{i:04d}.bin", "wb") as f:
         f.write(arr[i].astype(np.float64).tobytes())
 ```
@@ -87,9 +96,9 @@ Or push directly into your KDB ticker:
 
 ```python
 import pykx
-for i in range(result.n_paths):
+for i in range(arr.shape[0]):
     pykx.q("`:synth_path", f"insert", {
-        "ts": result_dates,
+        "ts": real_data.iloc[-252:].index,   # whatever index your `like=` window used
         "path_id": i,
         "spy": arr[i, :, 0],
         "qqq": arr[i, :, 1],

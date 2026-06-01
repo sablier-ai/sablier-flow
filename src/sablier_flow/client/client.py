@@ -575,6 +575,24 @@ class Client:
                 }
             except Exception:
                 anchor_prices = None
+        elif anchor_data is not None:
+            # Forward-forecast case: the customer's intent is "synth
+            # continues from where my real data ends." Anchor at the
+            # LAST row of anchor_data ("today"), not the first — and
+            # crucially not the checkpoint's stored ``last_prices``
+            # which is anchored at training end (or worse, at
+            # 85%-through-training when train_size was missing on the
+            # pipeline). Same scale-mismatch fix as the ``like=`` branch
+            # above, just for the forward-generation use case.
+            try:
+                last_row = anchor_data.iloc[-1]
+                anchor_prices = {
+                    str(col): float(last_row[col])
+                    for col in anchor_data.columns
+                    if pd.api.types.is_numeric_dtype(anchor_data[col])
+                }
+            except Exception:
+                anchor_prices = None
 
         params: dict[str, Any] = {
             "model_id": model_id,
@@ -1506,6 +1524,19 @@ class Client:
                     str(col): float(first_row[col])
                     for col in like.columns
                     if pd.api.types.is_numeric_dtype(like[col])
+                }
+            except Exception:
+                anchor_prices = None
+        elif anchor_data is not None:
+            # Forward-forecast case — mirror the fix in Client.generate.
+            # Anchor at the LAST row of anchor_data so synth continues
+            # from "today" rather than checkpoint-end / training-end.
+            try:
+                last_row = anchor_data.iloc[-1]
+                anchor_prices = {
+                    str(col): float(last_row[col])
+                    for col in anchor_data.columns
+                    if pd.api.types.is_numeric_dtype(anchor_data[col])
                 }
             except Exception:
                 anchor_prices = None
