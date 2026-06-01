@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-06-01 — initial public release
+
+### Added
+- Public release on PyPI: `pip install sablier-flow`.
+- Three executed value-prop notebooks under `examples/`:
+  - `01_backtest_robustness.ipynb` — selection-bias catch via per-strategy `overfit_score`. Demonstrates 29/30 lucky-strategy detection at threshold 0.7 vs 1/12 honest false positives on a 500-strategy pure-noise pool.
+  - `02_tstr_predictive_rank.ipynb` — Train-on-Synthetic Test-on-Real Spearman ρ = +0.74, 95% CI [+0.55, +0.83] on a 24-variant family.
+  - `03_memorization_audit.ipynb` — NN-distance ratio R = 0.9309 vs replay-floor R = 0.0161 (57.8× separation). `memorization_risk = 'low'`.
+- mkdocs-material docs site at https://docs.sablier.ai with the four executed notebooks rendered inline.
+- Apache 2.0 license for the SDK; CC BY 4.0 for documentation.
+
+### Changed
+- Repository visibility: private → public. New canonical URL https://github.com/sablier-ai/sablier-flow.
+- Memorization audit threshold bands reverted to the empirically-calibrated 0.80 (low) / 0.50 (medium) values appropriate for financial returns.
+
+### Removed
+- All paper references from SDK docstrings, docs, and notebooks. Every numerical claim now computed live in the notebooks themselves.
+
 ## 1.0.9 — Removed (breaking)
 
 This release rips out every back-compat shim, legacy-format handler, and
@@ -90,7 +108,7 @@ release forward.
   collapses into Y" paragraph is rewritten to describe the current
   contract without referring to past versions.
 
-## 1.0.7 (unreleased)
+## 1.0.7
 
 ### Fixed
 
@@ -129,7 +147,7 @@ release forward.
   in the `'insufficient_data'` branch so UIs can render a "needs
   more paths" tile instead of a misleading green/red.
 
-## 1.0.5 (unreleased)
+## 1.0.5
 
 ### Breaking
 
@@ -198,7 +216,7 @@ release forward.
   `data_type` map to the returned DataFrame so you can pass it straight
   through: `sf.fit(df, ..., data_types=df.attrs['data_types'])`.
 
-## 1.0.4 (unreleased)
+## 1.0.4
 
 ### Fixed
 
@@ -296,4 +314,5 @@ release forward.
     - `tests/integration/test_server_end_to_end.py` — Client → HttpxTransport → real FastAPI app via TestClient → GenerationResult.
 - **Demo notebook** `examples/01_alternative_versions.ipynb`.
 
-[Unreleased]: https://sablier.ai/flow
+[Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.13...HEAD
+[1.0.13]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.13

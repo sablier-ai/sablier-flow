@@ -620,7 +620,7 @@ class GenerationResult:
     """``'low'`` / ``'medium'`` / ``'high'`` from the NN-distance
     ratio, computed server-side. Customer should not trust the overfit
     verdict if ``'high'`` — see notebook
-    ``04_memorization_audit.ipynb``."""
+    ``03_memorization_audit.ipynb``."""
 
     memorization_nn_distance_ratio: float | None = None
     """Synthetic-to-training NN distance over training-to-training NN

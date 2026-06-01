@@ -37,10 +37,13 @@ Sign up at [sablier.ai](https://sablier.ai) for an API key (free starter credits
 ```python
 import sablier_flow as sf
 
-fit    = sf.fit(real_data, features=cols, data_types={c: "price" for c in cols}, horizon=63)
+sf.login()  # one-time device-auth flow
+
+df     = sf.demo_data()                                                        # or your own DataFrame
+fit    = sf.fit(df, features=list(df.columns), data_types={c: "price" for c in df.columns}, horizon=63)
 paths  = sf.generate(fit.model_id, n_paths=200)
-synth  = [my_backtest(df) for df in paths.as_dataframes()]
-report = sf.robustness(my_backtest(real_data), synth, primary_metric="sharpe")
+synth  = [my_backtest(p) for p in paths.as_dataframes()]
+report = sf.robustness(my_backtest(df), synth, primary_metric="sharpe")
 print(report.summary())
 ```
 
@@ -50,9 +53,9 @@ Live empirical demos with executed outputs baked in — open them on GitHub and 
 
 | Notebook | What it proves |
 |---|---|
-| [📓 **Backtest Robustness**](examples/01_backtest_robustness.ipynb) | FLOW's per-strategy `overfit_score` flags **29/30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise search) vs **0/12** false positives on a designed family |
-| [📓 **TSTR Predictive Rank**](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.76**, 95% CI **[+0.52, +0.86]**, p < 1e-4 — synth ranks predict real OOS ranks |
-| [📓 **Memorization Audit**](examples/04_memorization_audit.ipynb) | NN-distance ratio **R = 0.93** vs replay-floor R = 0.02 — **57× separation**, synth is genuinely new |
+| [📓 **Backtest Robustness**](examples/01_backtest_robustness.ipynb) | At the **0.7** `overfit_score` threshold: flags **29 of 30** selection-biased lucky strategies (top 30 of a 500-strategy pure-noise search; max honest = 0.725, min lucky = 0.695) vs **1 of 12** false positives on a designed honest family |
+| [📓 **TSTR Predictive Rank**](examples/02_tstr_predictive_rank.ipynb) | Spearman ρ = **+0.74**, 95% CI **[+0.55, +0.83]**, p < 1e-4 — synth ranks predict real OOS ranks |
+| [📓 **Memorization Audit**](examples/03_memorization_audit.ipynb) | NN-distance ratio **R = 0.9309** vs replay-floor R = 0.0161 — **57.8× separation**, synth is genuinely new |
 | [📓 **Getting Started**](examples/00_getting_started.ipynb) | End-to-end SDK tour: login → fit → validate → generate → robustness |
 
 ## Why use it

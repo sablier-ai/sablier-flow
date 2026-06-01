@@ -2,7 +2,7 @@
 
 `sablier-flow` is engine-agnostic and data-source-agnostic. It expects a `pd.DataFrame` with a `DatetimeIndex` and one numeric column per feature (a "feature" is whatever the customer wants — a ticker close, a yield, a vol surface point, a credit spread, etc.).
 
-Below are the canonical 5-line snippets for the data layers real quant desks actually use. Drop the resulting DataFrame straight into `@sablier_flow.augment` or `sablier_flow.evaluate_family`.
+Below are the canonical snippets for the data layers real quant desks actually use. Drop the resulting DataFrame straight into `sablier_flow.fit` / `sablier_flow.generate` / `sablier_flow.robustness` (or `sablier_flow.evaluate_family`).
 
 > If you just want to try the SDK with no data wiring, use the bundled demo dataset:
 >
@@ -19,16 +19,22 @@ Most likely data layer in 2026 quant desks. Storage-backed DataFrames with point
 
 ```python
 import arcticdb as adb
-import sablier_flow
+import sablier_flow as sf
 
 ac = adb.Arctic("s3://my-fund-quant-bucket")
 df = ac.get_library("equity_prices").read("us_largecap").data
 # df: DatetimeIndex × ticker columns, exactly the shape sablier-flow expects.
 
-@sablier_flow.augment(n_paths=100, horizon=252, features=list(df.columns))
-def my_backtest(prices): ...
+sf.login()
+fit = sf.fit(df, features=list(df.columns),
+             data_types={c: "price" for c in df.columns},
+             horizon=252)
+paths = sf.generate(fit.model_id, n_paths=100)
+synth_dfs = paths.as_dataframes()
 
-report = my_backtest(df)
+real_result   = my_backtest(df)
+synth_results = [my_backtest(p) for p in synth_dfs]
+report = sf.robustness(real_result, synth_results, primary_metric="sharpe")
 print(report.summary())
 ```
 
@@ -42,7 +48,7 @@ Standard at quant firms with kdb-native pipelines.
 
 ```python
 import pykx as kx
-import sablier_flow
+import sablier_flow as sf
 
 # Open the customer's kdb+ session
 kx.q("\\l /path/to/historical.q")
@@ -52,7 +58,17 @@ prices_kt = kx.q('select date, sym, close from prices where date within 2010.01.
 df = prices_kt.pd().pivot(index="date", columns="sym", values="close")
 df.index = pd.to_datetime(df.index)  # PyKX returns date as object dtype
 
-report = my_backtest(df)             # @augment-decorated upstream
+sf.login()
+fit = sf.fit(df, features=list(df.columns),
+             data_types={c: "price" for c in df.columns},
+             horizon=252)
+paths = sf.generate(fit.model_id, n_paths=100)
+synth_dfs = paths.as_dataframes()
+
+real_result   = my_backtest(df)
+synth_results = [my_backtest(p) for p in synth_dfs]
+report = sf.robustness(real_result, synth_results, primary_metric="sharpe")
+print(report.summary())
 ```
 
 ---
@@ -69,12 +85,22 @@ For analysts running on the Bloomberg Terminal — BQuant integrates ArcticDB so
 
 ```python
 import polars as pl
-import sablier_flow
+import sablier_flow as sf
 
 prices_pl = pl.read_parquet("us_universe.parquet")   # native Polars
-prices_pd = prices_pl.to_pandas().set_index("date")  # convert at boundary
+df = prices_pl.to_pandas().set_index("date")         # convert at boundary
 
-report = my_backtest(prices_pd)
+sf.login()
+fit = sf.fit(df, features=list(df.columns),
+             data_types={c: "price" for c in df.columns},
+             horizon=252)
+paths = sf.generate(fit.model_id, n_paths=100)
+synth_dfs = paths.as_dataframes()
+
+real_result   = my_backtest(df)
+synth_results = [my_backtest(p) for p in synth_dfs]
+report = sf.robustness(real_result, synth_results, primary_metric="sharpe")
+print(report.summary())
 ```
 
 Native Polars support is on the roadmap (see [docs/SDK.md](SDK.md) #versioning).
@@ -99,6 +125,7 @@ df = pd.read_parquet("/data/us_largecap_close_2010_2024.parquet")
 
 ```python
 import pandas as pd
+import sablier_flow as sf
 from sqlalchemy import create_engine
 
 eng = create_engine("snowflake://...@account/db/schema")
@@ -113,7 +140,17 @@ df = pd.read_sql_query(
 )
 df = df.pivot(index="date", columns="ticker", values="adj_close")
 
-report = my_backtest(df)
+sf.login()
+fit = sf.fit(df, features=list(df.columns),
+             data_types={c: "price" for c in df.columns},
+             horizon=252)
+paths = sf.generate(fit.model_id, n_paths=100)
+synth_dfs = paths.as_dataframes()
+
+real_result   = my_backtest(df)
+synth_results = [my_backtest(p) for p in synth_dfs]
+report = sf.robustness(real_result, synth_results, primary_metric="sharpe")
+print(report.summary())
 ```
 
 Identical patterns for BigQuery (`google.cloud.bigquery`), Postgres (`psycopg`), Redshift (`redshift-connector`).
@@ -126,14 +163,24 @@ Not a production source — Yahoo's API is unofficial and rate-limited — but f
 
 ```python
 import yfinance as yf
-import sablier_flow
+import sablier_flow as sf
 
 df = yf.download(
     ["SPY", "QQQ", "IWM", "TLT"], start="2010-01-01", end="2024-01-01",
     progress=False, auto_adjust=False,
 )["Adj Close"].dropna().sort_index()
 
-report = my_backtest(df)
+sf.login()
+fit = sf.fit(df, features=list(df.columns),
+             data_types={c: "price" for c in df.columns},
+             horizon=252)
+paths = sf.generate(fit.model_id, n_paths=100)
+synth_dfs = paths.as_dataframes()
+
+real_result   = my_backtest(df)
+synth_results = [my_backtest(p) for p in synth_dfs]
+report = sf.robustness(real_result, synth_results, primary_metric="sharpe")
+print(report.summary())
 ```
 
 For first-touch evaluation of the SDK without yfinance, use the bundled demo dataset:

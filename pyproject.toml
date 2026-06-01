@@ -90,11 +90,11 @@ all = [
 ]
 
 [project.urls]
-# Public URLs only — the source repository is private and customers
-# don't have access. Reach us at team@sablier.it for support / bug
-# reports until a public issue tracker ships.
-Homepage = "https://sablier.ai/flow"
+Homepage = "https://docs.sablier.ai"
 Documentation = "https://docs.sablier.ai"
+Repository = "https://github.com/sablier-ai/sablier-flow"
+Issues = "https://github.com/sablier-ai/sablier-flow/issues"
+Changelog = "https://github.com/sablier-ai/sablier-flow/blob/main/CHANGELOG.md"
 
 [project.scripts]
 sablier-flow = "sablier_flow.cli:main"
