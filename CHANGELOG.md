@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.16] - 2026-06-01 — docs/notebook polish
+
+### Fixed
+- examples/02_tstr_predictive_rank.ipynb Section 8 markdown numbers
+  realigned with the executed cell output (ρ = +0.78, CI [+0.51, +0.93]).
+- src/sablier_flow/__init__.py demo_data date range corrected to 2010-2023.
+- examples/03_memorization_audit.ipynb re-executed against a clean 1.0.16
+  install (1.0.15 sdist was published from a build that ran before the
+  notebook re-execute completed).
+- CHANGELOG 1.0.15 entry merged dual ### Changed sections; TSTR p-value
+  corrected (actual is ~6.7e-06).
+
 ## [1.0.15] - 2026-06-01 — docstring + notebook pin cleanup
 
 ### Changed
@@ -14,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - N1: per-strategy `overfit_score` flags **30/30** lucky strategies vs **0/12** honest false positives at threshold 0.7 (was 29/30 vs 1/12 on 1.0.14 run).
   - N2: Spearman ρ = +0.78, 95% bootstrap CI [+0.51, +0.93] (was +0.74 on 1.0.14 run).
   - N3: NN-distance ratio R = 0.9309 (unchanged).
+- README cosmetic refinements: demo dataset date range (2010-2023, actual),
+  TSTR predictive-rank reporting now leads with the bootstrap CI from the
+  notebook, LEAN adapter wording ("CSV export adapter" instead of
+  "QuantConnect adapter").
+- GitHub release v1.0.13 title aligned to CHANGELOG ('first public PyPI
+  release', was 'initial public release').
 
 ### Fixed
 - `src/sablier_flow/__init__.py` module docstring no longer ships the
@@ -25,13 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-executed against a clean 1.0.15 install so docs.sablier.ai/examples/*
   no longer shows the brief pip-resolve-window error visible on 1.0.14's
   00_getting_started page.
-
-### Changed
-- README cosmetic refinements: demo dataset date range (2010-2023, actual),
-  TSTR p-value reporting (p ≈ 4e-5 from notebook), LEAN adapter wording
-  ("CSV export adapter" instead of "QuantConnect adapter").
-- GitHub release v1.0.13 title aligned to CHANGELOG ('first public PyPI
-  release', was 'initial public release').
 
 ## [1.0.14] - 2026-06-01 — README fix-pass + PyPI metadata correction
 

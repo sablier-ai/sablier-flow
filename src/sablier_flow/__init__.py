@@ -50,7 +50,7 @@ Post-hoc analytics (client-side, no GPU):
 
 Demo + attestation helpers:
 
-    sablier_flow.demo_data                — bundled SPY/QQQ/IWM/TLT 2010-2024
+    sablier_flow.demo_data                — bundled SPY/QQQ/IWM/TLT 2010-2023
     sablier_flow.AttestationVerifier      — checks the TEE's quote vs SDK-pinned digest
     sablier_flow.envelope_encrypt         — X25519+AES-GCM envelope encryption
 
@@ -65,7 +65,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "1.0.15"
+__version__ = "1.0.16"
 
 __all__ = [
     "ALLOWED_DATA_TYPES",
