@@ -14,4 +14,4 @@ cd "$REPO_ROOT"
 mkdir -p docs/examples
 cp examples/*.ipynb docs/examples/
 
-mkdocs build "$@"
+python -m mkdocs build "$@"
