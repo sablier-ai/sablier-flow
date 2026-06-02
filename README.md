@@ -80,10 +80,12 @@ Live empirical demos with executed outputs baked in. **Preview** links go to the
 - **Train on synth, deploy on real** — `sf.predictive_rank_score` proves the ranking carries forward, so you don't have to burn real OOS data on strategy selection
 - **Engine-agnostic**: works with pandas, backtrader, vectorbt; LEAN CSV export adapter included
 
-## Docs
+## Docs + related projects
 
 - [**docs.sablier.ai**](https://docs.sablier.ai) — quickstart, examples, full SDK reference
 - [Quickstart](https://docs.sablier.ai/quickstart) — `pip install` to first verdict in 5 minutes
+- [**FinBench**](https://github.com/sablier-ai/finbench) — public leaderboard for multivariate financial time-series generation; sablier-flow is ranked there alongside TimeGAN / KoVAE / Diffusion-TS / TimeVAE
+- [**finval**](https://github.com/sablier-ai/finval) — the validation suite that scores FinBench submissions and powers `sf.validate(...)` under the hood
 
 ## License
 

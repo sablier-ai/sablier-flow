@@ -95,6 +95,8 @@ Documentation = "https://docs.sablier.ai"
 Repository = "https://github.com/sablier-ai/sablier-flow"
 Issues = "https://github.com/sablier-ai/sablier-flow/issues"
 Changelog = "https://github.com/sablier-ai/sablier-flow/blob/main/CHANGELOG.md"
+Benchmark = "https://github.com/sablier-ai/finbench"
+Validation = "https://github.com/sablier-ai/finval"
 
 [project.scripts]
 sablier-flow = "sablier_flow.cli:main"
