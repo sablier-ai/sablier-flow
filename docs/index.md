@@ -46,7 +46,7 @@ Each notebook ships with a download link at the top — click it to grab the `.i
 - **[Getting started](examples/00_getting_started.ipynb)** — end-to-end SDK tour: login → fit → validate → generate → robustness → forward forecast
 - **[Backtest robustness](examples/01_backtest_robustness.ipynb)** — at the **0.7** `overfit_score` threshold, flags **29 of 30** selection-biased lucky strategies vs **0 of 12** honest false positives
 - **[TSTR predictive rank](examples/02_tstr_predictive_rank.ipynb)** — Spearman ρ = **+0.7774**, 95% CI [+0.55, +0.89], p = 7.8e-06, n = 24
-- **[Memorization audit](examples/03_memorization_audit.ipynb)** — NN-distance ratio **R = 0.93** vs replay-floor R = 0.02 (57.8× separation)
+- **[Memorization audit](examples/03_memorization_audit.ipynb)** — NN-distance ratio **R = 0.93** vs replay-floor R = 0.02 (57.7× separation)
 
 ## What's distinctive
 

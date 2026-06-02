@@ -18,7 +18,7 @@ There are two ways to view a notebook in this folder:
 | [`00_getting_started.ipynb`](00_getting_started.ipynb) | [docs.sablier.ai](https://docs.sablier.ai/examples/00_getting_started/) | End-to-end SDK tour: login → fit → validate → generate → robustness → forward forecast → predictive-rank calibration |
 | [`01_backtest_robustness.ipynb`](01_backtest_robustness.ipynb) | [docs.sablier.ai](https://docs.sablier.ai/examples/01_backtest_robustness/) | At `overfit_score` threshold 0.7: catches **29 of 30** lucky strategies (lucky family min = 0.670, max = 0.875) vs **0 of 12** honest false positives (honest max = 0.690) |
 | [`02_tstr_predictive_rank.ipynb`](02_tstr_predictive_rank.ipynb) | [docs.sablier.ai](https://docs.sablier.ai/examples/02_tstr_predictive_rank/) | Spearman ρ = **+0.7774**, 95% bootstrap CI [+0.55, +0.89], p = 7.8e-06, n = 24 — synth ranks predict real OOS ranks |
-| [`03_memorization_audit.ipynb`](03_memorization_audit.ipynb) | [docs.sablier.ai](https://docs.sablier.ai/examples/03_memorization_audit/) | NN-distance ratio R = **0.9312** vs replay-floor R = 0.0161 — 57.8× separation, synth is genuinely new |
+| [`03_memorization_audit.ipynb`](03_memorization_audit.ipynb) | [docs.sablier.ai](https://docs.sablier.ai/examples/03_memorization_audit/) | NN-distance ratio R = **0.9288** vs replay-floor R = 0.0161 — 57.7× separation, synth is genuinely new |
 
 ## Running locally
 
