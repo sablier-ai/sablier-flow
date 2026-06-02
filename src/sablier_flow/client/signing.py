@@ -7,7 +7,7 @@ NRAS + AMD SEV-SNP VCEK chain). the current release ships:
   - A canonical JSON serialization the signer + verifier both agree on.
   - An Ed25519 signature primitive (real math via the ``cryptography``
     library) that exercises the full sign-then-verify flow end-to-end.
-  - A pluggable :class:`RootKeyRegistry` Protocol so Workstream D real
+  - A pluggable :class:`RootKeyRegistry` Protocol so Future iteration's
     impl can replace the in-memory registry with the actual AMD ARK/ASK
     + NVIDIA RIM + Google AS pinned keys.
 

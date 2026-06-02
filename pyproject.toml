@@ -69,7 +69,7 @@ dev = [
     "mkdocs-material>=9.5",
     "mkdocs-gen-files>=0.5",
     "mkdocstrings[python]>=0.25",
-    # FastAPI is used by the server/ TEE container but the
+    # FastAPI is used by the server-side container but the
     # SDK-side tests drive the in-process ASGI app via
     # fastapi.testclient — pull it into [dev] so CI can run
     # tests/integration/test_server_end_to_end.py without the
@@ -178,17 +178,13 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "ARG", "RUF"]
 ignore = [
     "E501",   # line length — handled by formatter
     # Ambiguous-character rules flag intentional mathematical notation
-    # (ν, σ, ×, etc.) inherited from the original Sablier backend. The
-    # symbols are meaningful (Student-t ν, standard deviation σ); rewriting
-    # them as ASCII would obscure the math without improving anything.
+    # (ν, σ, ×, etc.). Symbols are meaningful; rewriting as ASCII would
+    # obscure the math.
     "RUF001", # ambiguous unicode in string
     "RUF002", # ambiguous unicode in docstring
     "RUF003", # ambiguous unicode in comment
-    # typing.Dict/List/Tuple/Optional → modern syntax. The legacy code
-    # we moved verbatim from sablier-backend uses old-style annotations;
-    # enforcing modernization here would create a massive churn diff for
-    # zero behavior change and drift from the platform's existing style.
-    # Tighten when we have the bandwidth for the whole rewrite.
+    # Old-style typing annotations kept for compatibility; modernization
+    # is a future cleanup.
     "UP006",  # use dict instead of Dict
     "UP035",  # use modern typing imports (typing.Dict deprecated)
     "UP045",  # use X | None instead of Optional[X]

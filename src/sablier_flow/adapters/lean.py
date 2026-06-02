@@ -30,7 +30,7 @@ The intent is to drop these into the LEAN Cloud Data folder + run the
 exact same algorithm N times. Output is reproducible from the same
 :class:`GenerationResult`.
 
-Day-30 deliverable per the workstream plan; ships in v0.0.2.
+Day-30 deliverable on a follow-up release; ships in v0.0.2.
 """
 
 from __future__ import annotations

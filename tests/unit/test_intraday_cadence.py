@@ -3,7 +3,7 @@ DatetimeIndex (5-min, 1-min, hourly, daily, weekly, monthly, quarterly)
 and surfaces the detected cadence in the pre-flight info line.
 
 The wire payload always sends ``'daily'`` for intraday cadences so the
-current Cloud Run backend (which only knows the 4 canonical families)
+server (which only knows the 4 canonical families)
 treats the data as a uniform sequence without triggering the legacy
 ``FREQUENCY_DATA_TYPE_TRANSFORMS`` override path.
 """
@@ -67,7 +67,7 @@ class TestRowCadenceDetection:
 
 
 class TestWireFrequencyMapping:
-    """The wire-frequency value sent to the current Cloud Run backend is always
+    """The wire-frequency value sent to the server is always
     one of {'daily', 'weekly', 'monthly', 'quarterly'} so the legacy
     FREQUENCY_DATA_TYPE_TRANSFORMS overrides never accidentally fire on the
     customer's at-cadence data."""

@@ -74,7 +74,7 @@ DEMO_DATA_TYPES: dict[str, dict[str, str]] = {
         # 'volatility' / 'rate' / 'index' separately, but the daily-cadence
         # transform was identical (DIFFERENCE for VIX & TNX) and DXY's
         # LOG_RETURN treatment is now expressed via the `price` kind.
-        # See sablier-backend/internal/data_types_extensibility.md for why
+        # See internal design notes for why
         # the rate / volatility / index distinction was a frequency-override
         # artifact that the SDK no longer needs to expose.
         "VIX": "level",

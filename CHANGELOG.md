@@ -48,16 +48,12 @@ and a deprecation period would have just shipped two confusing surfaces.
 ### Architecture (the part you don't see)
 
 - **Wire-mapping shim** in the SDK: customer-`'level'` translates to
-  wire-`'rate'` (same DIFFERENCE transform on the current Cloud Run
-  backend); intraday cadences send `'daily'` on the wire so the legacy
-  `FREQUENCY_DATA_TYPE_TRANSFORMS` overrides never accidentally fire.
-  This contains the backend technical debt to a 3-entry dict in the SDK,
-  which gets deleted as a one-line PR when sablier-backend goes live on
-  AWS speaking the clean 3-string vocabulary natively. See
-  `sablier-backend/internal/data_types_extensibility.md` for the
-  registry-shape design that supports adding stair-step modifiers,
-  multi-cycle cyclical embeddings, event-driven channels, etc. in a
-  future minor without breaking the v1.1 customer surface.
+  wire-`'rate'` (same DIFFERENCE transform server-side); intraday
+  cadences send `'daily'` on the wire so the legacy frequency-driven
+  overrides never accidentally fire. Containing the back-compat
+  translation to a 3-entry dict in the SDK means it collapses to
+  identity once the server accepts the new vocabulary natively, with
+  no customer-facing change.
 
 ### What's NOT in 1.1.0 (and where they're going)
 
@@ -133,165 +129,66 @@ and a deprecation period would have just shipped two confusing surfaces.
   in-notebook `../docs/SDK.md` 404 link replaced with
   `https://docs.sablier.ai/SDK/`; broken in-page heading anchors fixed.
 
-## [1.0.21] - 2026-06-01 — 28 fixes from adversarial multi-lens audit
+## [1.0.21] - 2026-06-01 — audit-driven hardening
 
-A multi-agent audit (security / ergonomics / docs-vs-reality / methodology /
-error-paths lenses, with adversarial verification) surfaced 28 confirmed
-issues. The bigger ones below; full punch list in the commit body.
+### Hardened
+- API-key handling on login / repr / credentials file. `LoginResult` and
+  `JobHandle` reprs redact secrets; credentials tempfile opens with
+  `O_CREAT | O_EXCL | 0o600`; `endpoint=` kwarg and `SABLIER_FLOW_ENDPOINT`
+  env var both go through the same allowlist as the stored credentials.
+- `sablier-flow generate` CLI now wires the required `--data-types` flag
+  (accepts JSON or comma-pair form, with `df.attrs['data_types']` as a
+  fallback).
 
-### Fixed — critical
-- **`sablier-flow generate` CLI was dead on arrival.** The CLI parser had
-  no `--data-types` flag and the handler called `Client.fit()` without
-  it, so every CLI run hit `TypeError: data_types= is required` before
-  any network call. Added `--data-types` accepting JSON
-  (`--data-types '{"SPY":"price"}'`) or comma-pair form
-  (`--data-types 'SPY=price,VIX=volatility'`) with a fallback to
-  `df.attrs['data_types']` when the input Parquet carries the annotation.
-
-### Fixed — security
-- **`LoginResult.__repr__` no longer leaks the full `sk_live_` key.**
-  Default dataclass repr emitted the entire api_key verbatim — typing
-  `r = sf.login(); r` in a Jupyter cell wrote it into the `.ipynb` on
-  disk. Custom `__repr__` truncates to the 12-char prefix.
-- **`JobHandle.__repr__` no longer leaks the AES-256-GCM `result_key_b64`.**
-  Same dataclass-repr footgun: `print(handle)` / `logger.info('%r', handle)`
-  surfaced the one-shot key that decrypts the TEE-side result. Custom
-  `__repr__` redacts. `to_dict()` still serializes the key intentionally
-  for cross-process resume.
-- **Credentials tempfile now opens with `O_CREAT | O_EXCL | 0o600`** before
-  any bytes are written. Previously the file was created at the default
-  umask (0o644 = world-readable on most setups) and chmod'd to 0o600
-  *after* `json.dump`, so the cleartext api_key was readable by any local
-  user during the write window.
-- **`endpoint=` kwarg + `SABLIER_FLOW_ENDPOINT` env var now go through the
-  same allowlist** the stored credentials file uses. Previously both
-  paths bypassed `validate_stored_endpoint`, so
-  `Client(endpoint='http://evil.example.com/v1', api_key=...)` would
-  happily ship the key in cleartext to an unvetted host. Now refuses
-  with `ValueError` at construction.
-
-### Fixed — methodology / silent wrong-answer
-- **`predictive_rank_score` rejects mixed input forms.** Passing real as
-  `{name: {sharpe: X}}` and synth as `{name: scalar}` used to silently
-  produce a "well_calibrated on sharpe" verdict even when the scalar
-  was actually mean-return — gating deploy decisions on a mislabeled
-  rank correlation. Now raises ValueError naming the mismatch.
-- **Bailey-LdP analytical DSR warns on units mismatch.** The variance
-  formula `Var(SR) ≈ (1 - γ₃·SR + ((γ₄-1)/4)·SR²)/(T-1)` requires the
-  Sharpe in the same units as the returns used to derive γ₃ / γ₄.
-  Passing an annualized SR with per-period (daily) returns produced
-  silently wrong analytical numbers ~3-5× off. Now emits a UserWarning
-  when `t_obs > 60` and `|observed_sr| > 3.5` (the typical annualized-
-  with-daily-returns signature).
-- **DSR refuses NaN `observed_sr`.** Previously NaN comparison made
-  `np.mean(synth <= NaN) = 0.0` → realistic DSR silently came back as
-  0.0 "looks_like_noise". Now raises ValueError pointing at the likely
-  cause (zero-variance strategy returns).
-- **DSR reports effective N when synth has non-finite values.** Added
-  a `notes` field on `DeflatedSharpeReport` that records how many
-  paths were dropped before computing DSR. If 200 of 1000 synth Sharpes
-  came back NaN (e.g. zero-vol windows), the report now says so.
-- **DSR `t_obs=252` fallback now visible in notes.** When called without
-  `strategy_returns`, the analytical DSR assumes one year of daily
-  observations; the report's `notes` now spells this out so customers
-  don't read `analytical` as directly comparable to `realistic` when
-  their actual horizon is wildly different.
-- **DSR `_NULL_SOURCE_WARNED` module global removed.** The first call
-  in a process silenced every subsequent call to the same warning,
-  including completely unrelated ones. Python's default warning filter
-  dedupes by call-site source line, which is the correct granularity
-  here.
-- **`FamilyReport.summary()` now leads with `'overfit_selection'`** when
-  PBO ≥ 0.6 instead of cheerfully reporting "Significant" first and
-  then appending the PBO as a footnote. The summary now matches what
-  `report.verdict` says.
-- **`probability_of_backtest_overfitting` warns on chunk_size < 30**
-  and surfaces partition-skip rate. Default `cscv_splits=16` plus
-  short `real_data` produced ~4-row chunks that broke most rolling
-  backtests; the SDK now flags this and reports `n_skipped_nonfinite`
-  explicitly.
-- **`evaluate_family` kwarg routing fixed.** Previously `data_types`,
-  `api_key`, `endpoint`, `verify`, `attestation_mode`, `profile`,
-  `cache_dir`, `pinned_image_digest`, `frequency` were routed only
-  to the generate side — so cold-start callers passing `data_types=`
-  and `api_key=` to `evaluate_family(...)` crashed in `_fit()` before
-  any synth round-trip. Now dual-routed: fit and generate both see
-  the kwargs they need.
+### Fixed — methodology
+- `predictive_rank_score` raises on mixed real/synth input forms instead
+  of silently producing a `'well_calibrated'` verdict on shape-mismatched
+  inputs.
+- Bailey-LdP analytical DSR emits a UserWarning when the observed Sharpe
+  looks annualized while `strategy_returns` are per-period (the common
+  units-mismatch signature).
+- DSR rejects NaN `observed_sr` instead of silently returning `0.0`;
+  reports the count of dropped non-finite synth paths in `notes`; spells
+  out the implicit `t_obs=252` fallback when called without
+  `strategy_returns`.
+- `FamilyReport.summary()` leads with `'overfit_selection'` when
+  `pbo ≥ 0.6` (matches what `report.verdict` says).
+- `probability_of_backtest_overfitting` warns on `chunk_size < 30` and
+  surfaces partition-skip rate.
+- `evaluate_family` now dual-routes shared kwargs (`data_types=`,
+  `api_key=`, `endpoint=`, etc.) to both the fit and generate calls.
 
 ### Fixed — ergonomics + docs
-- **`from sablier_flow.adapters import write_lean_csv_universe`** now
-  works (was `ImportError`).
-- **`Client.resume()` clears the pending-job file on terminal failure**
-  too, not only success. Previously a `RemoteJobError` left a stale
-  `.json` in `~/.sablier/pending_jobs/` that future `resume()` calls
-  would keep polling forever.
-- **`consistency_check(...)` handles `FamilyReport` as baseline.**
-  Previously it fell through to the raw-sequence branch and silently
-  coerced the dataclass into 0-D garbage; now routes
-  `FamilyReport.synthetic_max_values` correctly.
-- **`SDK.md` signatures for `Client.fit / generate / validate` now show
-  `data_types=` (required), `frequency=`, and `quiet=`** — they were
-  omitted, contradicting the actual signatures. `JobHandle.kind` enum
-  fixed from `'train'` → `'fit'` in two places.
-- **SDK.md credits/usage return types corrected** from `dict[str, Any]`
-  to the actual Pydantic types (`CreditsBalance`, `UsageSummary`,
-  `UsageEvent`).
-- **Six broken TOC anchors in SDK.md fixed** (slugify mismatch — the
-  double-dash anchors don't match python-markdown's auto-generated
-  single-dash slugs).
-- **`GenerationResult.as_dataframes` canonical recipe** rewritten to
-  pass the SAME window to both `my_backtest(backtest_window)` and the
-  synth list. The pre-1.0.21 example asymmetrically passed the full
-  `df` (3500 bars) on the real side and 21-bar synth windows on the
-  other — guaranteed to produce `'highly_overfit'`. Added an explicit
-  warning admonition explaining why.
-- **`predictive_rank_score` docstring example** now uses per-strategy
-  `fn(real_oos)` instead of a single `my_backtest(real_oos)` shared
-  across strategies — the old example crashed with the zero-variance
-  ValueError documented in the same docstring's "Raises" section.
-- **`@sablier_flow.augment` and `alternative_versions` references**
-  swept from `demo.py`, `family.py`, `consistency.py`. The names
-  refer to surface that was deleted before 1.0; customers copying
-  the snippets got `AttributeError`.
-- **`FamilyReport.to_html` doc removed** from family.py module
-  docstring (the method doesn't exist; `summary()` is the right
-  reference).
+- `from sablier_flow.adapters import write_lean_csv_universe` now works
+  (was `ImportError`).
+- `Client.resume()` clears the pending-job file on terminal failure as
+  well as success.
+- `consistency_check(...)` accepts `FamilyReport` as a baseline.
+- `SDK.md` signatures for `Client.fit / generate / validate` show the
+  full kwarg surface; credits / usage return types corrected; broken
+  TOC anchors fixed; canonical `GenerationResult.as_dataframes` recipe
+  now passes the same window to real + synth backtests (the asymmetric
+  pre-1.0.21 example mechanically produced `'highly_overfit'`).
+- Removed stale references to deleted APIs (`@sablier_flow.augment`,
+  `alternative_versions`, `FamilyReport.to_html`) from module docstrings.
 
-## [1.0.20] - 2026-06-01 — four ergonomics + safety fixes from co-founder feedback
+## [1.0.20] - 2026-06-01 — four ergonomics + safety fixes
 
-### Security
-- **`sf.login()` no longer risks leaking the full API key to terminal
-  scrollback.** Previously the SDK trusted whatever the server returned
-  in the `key_prefix` field and printed it verbatim. On accounts where
-  the server (correctly) shipped a 12-char prefix this was fine, but
-  on accounts where the server shipped the full secret in that field,
-  the full key landed in stdout and any scrollback share / CI log /
-  agent-task-output copy. The SDK now hard-truncates to 12 chars
-  client-side regardless of what the server sends.
+### Hardened
+- `sf.login()` hard-truncates the printed `key_prefix` to 12 chars
+  client-side regardless of server behaviour, so the API key can't
+  reach stdout / scrollback / CI logs via the prefix field.
 
 ### Fixed
-- **`sf.estimate_cost(...)` no longer returns the misleading
-  `estimated_duration_s` field.** The credit estimate is deterministic
-  (formula based on dataset shape × horizon × n_paths); the duration
-  heuristic was running ~4-5× too high in practice (observed: 52 min
-  predicted vs 11 min actual on a 7-feature 14-year fit), and was
-  anchoring customer + agent expectations on a bad number. Field
-  removed from the response dict. The underlying wire dataclass keeps
-  the field for back-compat with stored responses.
-- **`f"{deflated_sharpe_report:.4f}"` no longer crashes with
-  `TypeError`.** Added a `__format__` method on `DeflatedSharpeReport`
-  that routes numeric format specs to the headline `realistic` DSR
-  (matches the class docstring which calls it "the headline number
-  Sablier puts forward"). Empty spec still gives the full repr so
-  `f"{report}"` is unchanged.
-- **`evaluate_family` now warns when the real-data window length and
-  the synthetic horizon differ.** Previously the real backtest ran on
-  the full `real_data` (e.g. 3500 bars) while each synthetic backtest
-  ran on `gen.horizon` bars (default 252), making the synthetic
-  distribution a biased null for the DSR-vs-real comparison. PBO is
-  unaffected (it walks the real series alone). The warning points
-  customers at `like=real_data.iloc[-gen.horizon:]` or manually
-  windowing `real_data` to match.
+- `sf.estimate_cost(...)` no longer returns the misleading
+  `estimated_duration_s` field (the credit estimate is deterministic
+  and reliable; the duration heuristic was running ~4-5× high).
+- `f"{deflated_sharpe_report:.4f}"` no longer raises `TypeError` —
+  `__format__` routes numeric format specs to the headline `realistic`
+  DSR.
+- `evaluate_family` warns when real-data window length and synthetic
+  horizon differ, since the asymmetric comparison produced a biased
+  DSR null. Points callers at `like=real_data.iloc[-gen.horizon:]`.
 
 ## [1.0.19] - 2026-06-01 — forward-forecast anchoring + docs sweep
 
@@ -561,7 +458,7 @@ release forward.
   drop the two optional list fields that were kept on the wire for 0.4.x
   SDK readers. Wire shape is now `features: list[str]` only.
 - **Server-side TEE worker wire kind `'train'`.** `JOB_TYPES`,
-  `server.tee.runner` dispatch, and `server.api.main` dev mock all key
+  server-side job dispatch, and the dev-mode mock all key
   off `'fit'` now. Matches the SDK's canonical vocabulary; the legacy
   `'train'` literal is gone end-to-end.
 - **Pre-1.0.7 `validate` "sanity check against training data" docstring
@@ -690,11 +587,10 @@ release forward.
   error between save and print could leave a stored key on disk with no
   terminal echo of the approver, defeating the whole point of surfacing
   who approved.
-- **`validate_stored_endpoint` allowlist — Cloud Run short alias.** The
-  canonical prod URL `https://sablier-api-<hash>-uc.a.run.app` (the form
-  used by our deploy scripts and smoke tests) is now accepted in
-  addition to the long `*.us-central1.run.app` form. Previously a
-  credentials file pointing at the prod short-form URL would silently
+- **`validate_stored_endpoint` allowlist — short-form prod URL.** The
+  canonical prod URL short-form is now accepted in addition to the
+  long-form variant. Previously a credentials file pointing at the
+  prod short-form URL would silently
   drop its endpoint on next load and fall back to `DEFAULT_ENDPOINT` —
   no security harm, just a UX wart. `https://` is still required.
 
@@ -750,33 +646,21 @@ release forward.
 
 - `sablier_flow.FitResult` and `sablier_flow.ValidationReport` dataclasses.
 - `JobResultPayload` is polymorphic across `generate / fit / validate` — same on-the-wire framing, distinguished by a `kind` field in metadata.
-- Persistent encrypted model storage on the server side (`flow_sdk_models` table, AES-256-GCM checkpoint blobs in GCS). Sablier control plane never sees the plaintext checkpoint at rest; the key is held by the API + worker service accounts. (True TEE-bound storage where only the attested enclave can unwrap is v1.x — wire format already carries an `encryption_key_id` discriminator so the migration is in-place.)
+- Persistent encrypted model storage on the server side. Plaintext checkpoints are never at rest in the control plane; the unwrap key is held only by the API + worker service accounts. (True TEE-bound storage where only an attested enclave can unwrap is on the roadmap — the wire format already carries an `encryption_key_id` discriminator so the migration is in-place.)
 
 ## [Unreleased before 0.0.2a0]
 
 ### Added
-- Initial repo scaffolding (Workstream A): `pyproject.toml`, Apache-2.0 LICENSE, README, CI workflow skeleton, package directory tree.
-- Apache-2.0 license boundary established. `server/` (TEE container) excluded from the wheel and remains proprietary.
-- **Pure pipeline (Workstream B.2)**: `sablier_flow.pipeline.train_model`, `generate_paths`, `validate_model`, `assess_memorization` — DataFrame in / GenerationResult out, no DB or auth coupling.
-- **Robustness scoring (Workstream E)**: `sablier_flow.robustness(real_result, synthetic_results)` returns a typed `RobustnessReport` with overfit_score, synthetic Sharpe CI, and recommendation bands.
-- **Engine adapters (Workstream E)**: `as_dataframes`, `as_array`, `as_backtrader_feeds`, `as_vectorbt_panel`.
-- **Client ↔ TEE wire protocol (Workstream D + E)**:
-    - `sablier_flow.client.crypto` — X25519 ECDH + HKDF-SHA256 + AES-256-GCM envelope encryption with `EnvelopeEncrypted.to_bytes` / `from_bytes` wire format.
-    - `sablier_flow.client.attestation` — `AttestationVerifier` enforces pinned image digest, TEE type / hardware, measurements, freshness, and signature presence. Modes: `production` (strict) and `fake-for-dev` (staging).
-    - `sablier_flow.client.transport` — Pydantic wire models (`CreateJobRequest`, `AttestationQuoteResponse`, `JobStatusResponse`, `ResultResponse`), `Transport` Protocol, `HttpxTransport` (real HTTPS), `InMemoryTransport` (in-process fake).
-    - `sablier_flow.client.payload` — `JobUploadPayload` (Parquet + params + 32B AES key) and `JobResultPayload` (numpy arrays + metadata); both length-prefixed binary with magic + version.
-    - `sablier_flow.Client.alternative_versions` — full lifecycle: POST /v1/jobs → verify attestation → envelope-encrypt → upload → poll → decrypt result.
-- **TEE-side mirror**:
-    - `server.tee.crypto.TEEKeyState` — per-boot X25519 keypair holder.
-    - `server.tee.attestation.generate_attestation_quote` — wire-format quote generator.
-    - `server.tee.runner.run_job_real` — real-pipeline runner (train + generate inside the Confidential VM).
-- **FastAPI control plane (`server/api/`)**: `POST /v1/jobs`, `PUT /v1/jobs/{id}/data`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`, plus `/health` and `/v1/version`. Thread-safe `JobStore` with injected keypair factory + quote generator + runner so dev/test use a mock pipeline and production uses the torch-backed runner.
-- **HXZ 452-anomaly validation harness scaffolded** (`benchmarks/hxz/`): `run_study.py` per-anomaly study + `analyze.py` Gate 2 verdict (Spearman ≥ 0.75, median abs Sharpe error ≤ 0.15, overfit-catch rate ≥ 80%).
-- **End-to-end tests** (no live server, no torch, no real TEE):
-    - `tests/integration/test_attestation_handshake.py` — full client↔TEE handshake roundtrip.
-    - `tests/integration/test_client_end_to_end.py` — Client → InMemoryTransport → fake TEE → GenerationResult.
-    - `tests/integration/test_server_end_to_end.py` — Client → HttpxTransport → real FastAPI app via TestClient → GenerationResult.
-- **Demo notebook** `examples/01_alternative_versions.ipynb`.
+- Initial public release of the SDK under Apache 2.0.
+- Pure pipeline: `sablier_flow.pipeline.train_model`, `generate_paths`, `validate_model`, `assess_memorization` — DataFrame in / `GenerationResult` out.
+- Robustness scoring: `sablier_flow.robustness(real_result, synthetic_results)` returns a typed `RobustnessReport` with `overfit_score`, synthetic Sharpe CI, and recommendation bands.
+- Engine adapters: `as_dataframes`, `as_array`, `as_backtrader_feeds`, `as_vectorbt_panel`.
+- Client-side crypto + attestation + transport for the hosted compute service:
+    - `sablier_flow.client.crypto` — X25519 + HKDF-SHA256 + AES-256-GCM envelope encryption.
+    - `sablier_flow.client.attestation` — `AttestationVerifier` enforcing pinned image digest, hardware type, measurements, freshness, and signature presence.
+    - `sablier_flow.client.transport` — Pydantic wire models, `Transport` Protocol, real HTTPS and in-process test transports.
+    - `sablier_flow.Client.alternative_versions` — full lifecycle: submit job → verify attestation → envelope-encrypt → upload → poll → decrypt result.
+- Demo notebook `examples/01_alternative_versions.ipynb`.
 
 [Unreleased]: https://github.com/sablier-ai/sablier-flow/compare/v1.0.17...HEAD
 [1.0.17]: https://github.com/sablier-ai/sablier-flow/releases/tag/v1.0.17

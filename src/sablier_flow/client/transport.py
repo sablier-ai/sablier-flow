@@ -27,7 +27,7 @@ Job lifecycle (as POSTed by the Client):
 For long-running training the client polls GET /v1/jobs/{id} until
 ``status`` is ``"completed"`` (or ``"failed"``).
 
-Workstream D real impl will provide a live ``HttpxTransport`` against
+Future iteration will provide a live ``HttpxTransport`` against
 the production endpoint. Today this module is the spec the TEE service
 implements, and the in-memory fake lets us test the whole protocol now.
 """
@@ -1012,10 +1012,10 @@ class InMemoryTransport:
             synchronously the moment data is uploaded.
         quote_generator
             Callable ``(ephemeral_pubkey_bytes) -> bytes`` matching
-            :func:`server.tee.attestation.generate_attestation_quote`.
+            the server-side attestation-quote generator.
         tee_keys
             Object with a ``public_key_bytes`` attribute (e.g.
-            :class:`server.tee.crypto.TEEKeyState`).
+            the server-side ephemeral keypair).
         """
         self._run_job = run_job
         self._quote_generator = quote_generator

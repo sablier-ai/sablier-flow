@@ -4,7 +4,7 @@ the contract that the SDK customer-facing surface accepts only
 with a friendly migration hint.
 
 The wire-mapping shim (``_to_wire_data_types``) translates
-``'level' → 'rate'`` before sending to the current Cloud Run backend; tests
+``'level' → 'rate'`` before sending to the server; tests
 here exercise both the customer-facing API and the wire shim.
 """
 from __future__ import annotations
@@ -87,7 +87,7 @@ class TestWireMapping:
         assert _WIRE_DATA_TYPE_MAPPING["price"] == "price"
 
     def test_level_translates_to_rate(self):
-        # back-compat with current Cloud Run backend; same DIFFERENCE
+        # back-compat with server; same DIFFERENCE
         # transform server-side. Will become identity when sablier-backend
         # goes live on AWS with native 'level' support.
         assert _WIRE_DATA_TYPE_MAPPING["level"] == "rate"

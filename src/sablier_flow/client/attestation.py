@@ -20,7 +20,7 @@ baked into this SDK release. The trust narrative:
 This module ships **v1 of the verification protocol**. The signature
 verification primitives are pure-Python via the cryptography library;
 the policy (which roots / which measurements) is pluggable for the
-real Workstream D deploy.
+production deploy.
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ class AttestationVerifier:
     verification only happens when ``root_key_registry`` is provided.**
     When the registry is ``None``, signature math is skipped (issuers
     must still be present, but the bytes are not validated against any
-    pinned key). Workstream D will land the strict path that makes the
+    pinned key). Future iteration will land the strict path that makes the
     registry mandatory and turns the missing-registry case into a hard
     error.
 
@@ -246,7 +246,7 @@ class AttestationVerifier:
         # production-mode verification but hasn't wired any pinned root
         # keys. Without a registry the signature math is silently skipped
         # (see _check_signatures), which is decidedly *not* what the name
-        # "production" implies. Workstream D will turn this into a hard
+        # "production" implies. Future iteration will turn this into a hard
         # error; until then, surfacing the gap once per process is the
         # least we can do.
         #
@@ -389,7 +389,7 @@ class AttestationVerifier:
           2. **Without a registry**: we fall back to the
              structure-only check — issuers must be *present* but the
              signature math is not validated. A logger warning makes
-             the gap visible. Workstream D real impl makes the
+             the gap visible. Future iteration makes the
              registry mandatory.
         """
         if self.mode == "fake-for-dev":
@@ -415,7 +415,7 @@ class AttestationVerifier:
             # envelope is what's actually defending plaintext today. No
             # user-facing log line because it added noise to every
             # fit/generate/validate cycle without giving customers an
-            # action to take. Workstream D will flip the registry to
+            # action to take. Future iteration will flip the registry to
             # required, which will produce a hard error here instead.
             return
 

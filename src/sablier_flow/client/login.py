@@ -61,8 +61,8 @@ _LOG = logging.getLogger(__name__)
 _ALLOWED_HOST_EXACT = {"sablier.ai"}
 _ALLOWED_HOST_SUFFIX = (".sablier.ai",)
 # Cloud Run serves the same service under TWO hostname forms:
-#   * canonical regional:   sablier-api-<hash>.us-central1.run.app
-#   * regional short alias: sablier-api-<hash>-uc.a.run.app
+#   * canonical long form:  sablier-api-<hash>.<region>.run.app
+#   * short alias:          sablier-api-<hash>-<region>.a.run.app
 # Both are valid and routable — the short form is what Cloud Run
 # actually shows in the console and what our deploy scripts use as the
 # canonical prod URL (see scripts/e2e_smoke.py). Both must be on the
@@ -84,8 +84,8 @@ def validate_stored_endpoint(url: str | None) -> str | None:
 
       * scheme MUST be ``https://`` (no plaintext, no ``file://``, etc.)
       * host MUST be ``sablier.ai``, ``*.sablier.ai``, the Cloud Run
-        regional canonical hostname ``sablier-api-*.us-central1.run.app``,
-        or its short alias ``sablier-api-*-uc.a.run.app``
+        long-form hostname ``sablier-api-*.<region>.run.app``,
+        or its short alias ``sablier-api-*-<region>.a.run.app``
 
     On reject we log a clear warning and return ``None`` rather than
     raising — callers fall back to the default endpoint, which is the

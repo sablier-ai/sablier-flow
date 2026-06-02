@@ -523,7 +523,7 @@ class ValidationReport:
 # the wide ``acceptable`` zone get re-judged honestly.
 #
 # Metric naming follows the actual registry in
-# ``backend/sablier_flow_internal/pipeline/validate.py`` and the threshold
+# `the server-side validation module` and the threshold
 # tables in ``validation/metrics/core/thresholds.py``:
 #
 #   - ``tail_heaviness``   — kurtosis-error metric. Excellent/good/acceptable

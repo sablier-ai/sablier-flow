@@ -121,16 +121,13 @@ ALLOWED_DATA_TYPES = frozenset({"price", "level", "return"})
 #   'level'  → difference + z-score      (additive series; rates, vols, spreads, indices)
 #   'return' → identity + z-score        (already-stationary series)
 # Stair-step / forward-filled lower-cadence features (CPI, GDP, Fed rate) are
-# NOT supported in 1.1.0 — customer aggregates to row cadence first. Extension
-# path (cycle/stair modifiers, multi-cycle cyclical embeddings, event channels)
-# is designed-but-deferred; see sablier-backend/internal/data_types_extensibility.md.
+# not supported — aggregate to row cadence first.
 
-# Internal wire mapping: the current Cloud Run backend still speaks the
-# legacy 5-string vocabulary. The new backend on AWS (sablier-backend) will
-# speak the clean 3-string vocab natively; until that flips, the SDK
-# translates `'level'` → `'rate'` on the wire (same DIFFERENCE transform
-# server-side). When the new backend ships and gets attested as live, this
-# mapping becomes the identity.
+# Wire-mapping shim: the SDK exposes the 3-string customer vocabulary
+# `{price, level, return}` but the wire protocol still carries the
+# pre-1.1 form for back-compat. `'level'` → `'rate'` translates to the
+# same difference transform server-side. Collapses to identity once
+# the server accepts the new vocab natively.
 _WIRE_DATA_TYPE_MAPPING = {
     "price":  "price",
     "level":  "rate",
@@ -2354,7 +2351,7 @@ def _require_data_types(
 
 def _to_wire_data_types(customer_data_types: dict[str, str]) -> dict[str, str]:
     """Translate the SDK's customer-facing 3-string vocabulary to the
-    legacy 5-string vocabulary the current Cloud Run backend speaks.
+    legacy 5-string vocabulary the server still speaks.
 
     Customer-facing → wire:
         'price'  → 'price'    (LOG_RETURN, unchanged)
@@ -2378,7 +2375,7 @@ def _detect_row_cadence(index: Any) -> tuple[str, pd.Timedelta]:
     customer-facing description for the info line ("intraday (5-min)",
     "daily", "monthly", etc.). The actual wire value sent to the server
     is always ``'daily'`` via :func:`_resolve_wire_frequency` for
-    backwards compatibility with the current Cloud Run backend's
+    backwards compatibility with the server's
     transform pipeline (see ``_WIRE_DATA_TYPE_MAPPING`` rationale near
     the top of this module).
 

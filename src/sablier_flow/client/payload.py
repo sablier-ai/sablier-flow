@@ -15,7 +15,7 @@ The "result key" is a simple shared secret tucked inside the
 envelope-encrypted upload. It never traverses the network in cleartext.
 For v1 production this is sufficient: the result_key is bound to a
 single job, the TEE wipes it on shutdown, and the customer holds the
-only copy outside the enclave. The follow-up (Workstream D real impl)
+only copy outside the enclave. The follow-up (Future iteration)
 swaps this for a customer-controlled KMS key when long-lived
 re-encryption is needed.
 
