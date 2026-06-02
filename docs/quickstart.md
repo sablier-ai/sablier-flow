@@ -272,7 +272,7 @@ your laptop ──HTTPS──> Sablier API (Cloud Run) ──Cloud Tasks──> 
 backtester
 ```
 
-For the full security posture (what's encrypted, what isn't, what's on the roadmap), see [`SDK.md`](SDK.md#security-posture-today-alpha).
+See [Security posture](SDK.md#security-posture-today-alpha) for the threat model if you need it.
 
 ## Bundled demo dataset — `sf.demo_data()`
 

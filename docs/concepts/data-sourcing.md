@@ -12,7 +12,7 @@ Quant funds either:
 
 Categories 1 and 2 are our customers. They will not let their data leave their infrastructure under any circumstance. They've built their entire operating model — data licensing, vendor contracts, security reviews, compliance — around that constraint.
 
-This is exactly why the architecture is what it is. **You hold your data; we hold the compute.** The envelope-encryption + image-pinning wire protocol the SDK already speaks is designed to bind that pairing to a confidential VM with hardware memory encryption; the substrate that delivers that binding is on the roadmap (see [Security posture](#security-posture-today)).
+This is exactly why the architecture is what it is. **You hold your data; we hold the compute.** The envelope-encryption + image-pinning wire protocol the SDK already speaks is designed to bind that pairing to a confidential VM with hardware memory encryption; the substrate that delivers that binding is on the roadmap (see [Security posture](../SDK.md#security-posture-today-alpha)).
 
 ## The data contract — DataFrame in, DataFrame out
 
@@ -149,21 +149,7 @@ Whatever you've built — sentiment scores, credit-card panels, satellite-derive
 5. **Ship the encrypted bundle** to the worker over TLS 1.3.
 6. **The worker decrypts in RAM**, runs the FLOW model, encrypts the result with the same one-shot symmetric key, returns it.
 
-## Security posture today
-
-The protocol above runs on every request — the code is real, the digest pinning is real, the keys are real. What's **not yet** real is the hardware substrate that would make step 6 immune to a privileged GCP operator:
-
-| Layer | Status |
-|---|---|
-| TLS 1.3 in transit, KMS-encrypted at rest in GCS, one-shot per-job symmetric keys | ✓ Today |
-| Image-digest pinning verified before the encryption key is generated | ✓ Today (structure-only check; full root-key signature verification ships with the SEV-SNP rollout) |
-| **AMD SEV-SNP** CPU memory encryption — encrypts RAM so even a privileged host OS / GCP operator can't see plaintext during training | 🚧 Roadmap (awaiting GCP H100-CC quota) |
-| **NVIDIA H100 CC mode** — GPU memory encryption, same goal at the device level | 🚧 Roadmap |
-| **NRAS attestation chain** — NVIDIA-signed attestation of the GPU state | 🚧 Roadmap |
-
-What this means: today's deployment is meaningfully better than vanilla cloud SaaS (encrypted everywhere except in the worker's RAM during the ~minutes-long training job), but it does **not** yet defend against a privileged GCP insider inspecting that RAM. The SDK and the wire protocol the customer code touches stay identical when SEV-SNP + H100 CC ship — only the substrate underneath changes.
-
-If your security review absolutely requires hardware memory encryption before you can ship data, hold until the SEV-SNP rollout. If TLS + KMS + ephemeral keys + image-digest pinning meets your bar today (most quant-tech-stack reviews do clear this), the current release is usable.
+For the security posture (what's encrypted today, what's on the roadmap), see [`SDK.md` → Security posture](../SDK.md#security-posture-today-alpha). Short version: TLS + KMS + ephemeral keys + image-digest pinning are live; hardware memory encryption is on the roadmap.
 
 ## Data quality is your problem
 

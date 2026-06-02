@@ -234,20 +234,7 @@ client = sf.Client(
 
 ## Security posture today (alpha)
 
-The SDK and worker run a full envelope-encryption + image-digest-pinning protocol that's *designed* to bind the customer's encryption keys to a measured-boot confidential VM. The protocol code is in place and runs on every request. What's **not yet** in place is the underlying confidential-compute substrate.
-
-| Layer | Status |
-|---|---|
-| **TLS 1.3 in transit** (client ↔ API ↔ worker) | ✓ |
-| **One-shot AES-256-GCM symmetric key per job** (wrapped in X25519 envelope to the worker's ephemeral pubkey; never re-used, never persisted to disk) | ✓ |
-| **GCS at-rest encryption** with Cloud KMS-managed keys (checkpoints + OOS holdouts + result blobs) | ✓ |
-| **Customer data isolation** — each job runs in its own Cloud Run instance, scaled to zero between jobs | ✓ |
-| **Image-digest pinning** — the SDK ships a pinned digest of the worker image; mismatched server image is rejected before any data is sent | ✓ |
-| **AMD SEV-SNP CPU memory encryption** — even a privileged host OS or GCP operator cannot inspect plaintext during training | 🚧 Not yet — Cloud Run L4 is not a confidential VM. Plaintext customer data exists in worker RAM during the ~minutes-long training job. |
-| **NVIDIA H100 CC mode** (GPU memory encryption) + **NRAS attestation chain** | 🚧 Awaiting H100 quota |
-| **Cryptographic attestation** verified against AMD / NVIDIA root keys before the customer's encryption key is released to the worker | 🚧 Same gate — the SDK's `AttestationVerifier` runs the protocol on every request, but the digest pinned today corresponds to a regular Cloud Run image, not a measured-boot enclave. Production-grade attestation (signature math against pinned root keys) ships with the SEV-SNP rollout. |
-
-**Bottom line**: today the SDK delivers strong network-layer + storage-layer + key-lifecycle protection. It does **not** yet deliver memory-encryption-grade protection against a privileged GCP operator inspecting worker RAM during training. The full SEV-SNP + H100 CC + NRAS attestation rollout lands when GCP releases our H100 confidential-compute quota. The wire protocol the SDK already speaks is the same one we'll use post-rollout — customer code doesn't change.
+TLS 1.3 in transit, KMS-encrypted at rest, one-shot per-job symmetric keys, image-digest pinning on every request. Hardware memory encryption (AMD SEV-SNP + NVIDIA H100 CC mode) is on the roadmap — until that ships, plaintext customer data exists in worker RAM during the minutes-long training job. Email [security@sablier.ai](mailto:security@sablier.ai) for the full threat model if you need it for a review.
 
 ---
 

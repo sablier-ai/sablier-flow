@@ -4,7 +4,7 @@
 
 `sablier-flow` is a Python SDK that lets you run your existing backtest on **N alternative versions of the same data** — turning a single P&L number into a distribution of P&L curves. If a strategy works on real history but falls apart on synthetically-generated alternatives that share the same statistical properties, it's overfit. If it holds up, you have real evidence.
 
-A purpose-built generative model is trained on your data on hosted GPUs over an envelope-encryption + image-digest-pinning wire protocol; your backtest engine doesn't change. The hosted service is in **alpha** today — confidential-compute substrate is on the roadmap, not yet live; see [Security posture](SDK.md#security-posture-today-alpha) for the current threat model.
+A purpose-built generative model is trained on your data on hosted GPUs over an envelope-encryption + image-digest-pinning wire protocol; your backtest engine doesn't change. The hosted service is in **alpha** today; see [Security posture](SDK.md#security-posture-today-alpha) if you need the threat model.
 
 ```python
 import sablier_flow as sf

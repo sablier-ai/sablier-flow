@@ -30,9 +30,7 @@ The model architecture also makes memorization structurally difficult — operat
 
 ### 4. "Why should I trust the data I send doesn't leak?"
 
-The hosted service is in **alpha** today — envelope-encryption + image-digest pinning are live on the wire protocol, AMD SEV-SNP + NVIDIA H100 confidential-compute substrate is on the roadmap, not yet live. The honest threat model is documented in the [security posture section of the SDK reference](../SDK.md#security-posture-today-alpha). If your security review requires hardware memory encryption today, hold until the SEV-SNP rollout. If TLS + KMS + ephemeral keys + image-digest pinning clears your bar (most quant-tech reviews do), the current release is usable.
-
-The customer-facing wire protocol stays identical when the confidential-compute substrate ships — only the underlying VM changes.
+TLS + KMS + ephemeral keys + image-digest pinning are live; hardware memory encryption (AMD SEV-SNP + NVIDIA H100 CC) is on the roadmap. Email [security@sablier.ai](mailto:security@sablier.ai) if you need the full threat model for a review.
 
 ## The companion essays
 
