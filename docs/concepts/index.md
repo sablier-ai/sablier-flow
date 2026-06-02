@@ -6,7 +6,7 @@ The conceptual underpinnings of `sablier-flow`: what the SDK does, why the metho
 
 ### 1. "Isn't training a generator on history and then evaluating on the same history just data leakage?"
 
-No, because the strategy never sees the training data. The flow model learns a *distribution* over alternative-history paths that share your data's joint statistics; the strategy is then evaluated against samples drawn from that distribution. The customer's backtest function operates on synthetic paths it has never seen. What's being tested is whether the strategy's edge survives realization-specific noise — not whether the model can memorize a single realization.
+No, because the strategy never sees the training data. The generator learns a *distribution* over alternative-history paths that share your data's joint statistics; the strategy is then evaluated against samples drawn from that distribution. The customer's backtest function operates on synthetic paths it has never seen. What's being tested is whether the strategy's edge survives realization-specific noise — not whether the model can memorize a single realization.
 
 This is the standard methodology in every published synthetic-data benchmark for finance (see the literature pile in [Why in-sample training is correct](in-sample-is-correct.md)). The legitimate concern this objection collides with is **memorization** — that's a separate failure mode the SDK tests for explicitly via `ValidationReport.memorization_risk` and the NN-distance ratio.
 
@@ -30,7 +30,7 @@ The model architecture also makes memorization structurally difficult — operat
 
 ### 4. "Why should I trust the data I send doesn't leak?"
 
-TLS + KMS + ephemeral keys + image-digest pinning are live; hardware memory encryption (AMD SEV-SNP + NVIDIA H100 CC) is on the roadmap. Email [security@sablier.ai](mailto:security@sablier.ai) if you need the full threat model for a review.
+TLS + KMS + ephemeral keys + image-digest pinning are live; hardware memory encryption (AMD SEV-SNP + NVIDIA H100 CC) is on the roadmap.
 
 ## The companion essays
 

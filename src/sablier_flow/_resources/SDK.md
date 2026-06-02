@@ -233,7 +233,7 @@ client = sf.Client(
 
 ## Security posture today (alpha)
 
-TLS 1.3 in transit, KMS-encrypted at rest, one-shot per-job symmetric keys, image-digest pinning on every request. Hardware memory encryption (AMD SEV-SNP + NVIDIA H100 CC mode) is on the roadmap — until that ships, plaintext customer data exists in worker RAM during the minutes-long training job. Email [security@sablier.ai](mailto:security@sablier.ai) for the full threat model if you need it for a review.
+TLS 1.3 in transit, KMS-encrypted at rest, one-shot per-job symmetric keys, image-digest pinning on every request. Hardware memory encryption (AMD SEV-SNP + NVIDIA H100 CC mode) is on the roadmap — until that ships, plaintext customer data exists in worker RAM during the minutes-long training job
 
 ---
 
