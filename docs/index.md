@@ -35,9 +35,8 @@ print(verdict.summary())
 ## Get started
 
 - **[Quickstart](quickstart.md)** — `pip install` to overfit verdict in 5 minutes
-- **[SDK reference](SDK.md)** — every method, kwarg, return type; the canonical reference
-- **[Recipes](recipes.md)** — copy-pasteable patterns for common quant workflows
-- **[Concepts](concepts/index.md)** — why in-sample training is correct, what predictive validity means, data sourcing, engine integration
+- **[Examples](examples/00_getting_started.ipynb)** — full tutorial + three value-proof notebooks
+- **[SDK reference](SDK.md)** — every method, kwarg, return type
 
 ## Worked examples — empirical demos with executed outputs
 

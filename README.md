@@ -82,10 +82,8 @@ Live empirical demos with executed outputs baked in. **Preview** links go to the
 
 ## Docs
 
-- [**docs.sablier.ai**](https://docs.sablier.ai) — full SDK reference, recipes, concepts
+- [**docs.sablier.ai**](https://docs.sablier.ai) — quickstart, examples, full SDK reference
 - [Quickstart](https://docs.sablier.ai/quickstart) — `pip install` to first verdict in 5 minutes
-- [Concepts: why in-sample training is correct](https://docs.sablier.ai/concepts/in-sample-is-correct/)
-- [Concepts: data sourcing + engine integration](https://docs.sablier.ai/concepts/data-sourcing/)
 
 ## License
 

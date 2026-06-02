@@ -62,12 +62,6 @@ nav:
       - TSTR predictive rank: examples/02_tstr_predictive_rank.ipynb
       - Memorization audit: examples/03_memorization_audit.ipynb
   - SDK reference: SDK.md
-  - Recipes: recipes.md
-  - Concepts:
-      - Overview: concepts/index.md
-      - In-sample is correct: concepts/in-sample-is-correct.md
-      - Data sourcing: concepts/data-sourcing.md
-      - Engine integration: concepts/engine-integration.md
 
 markdown_extensions:
   - admonition
