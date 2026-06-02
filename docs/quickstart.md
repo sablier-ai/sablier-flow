@@ -254,7 +254,7 @@ The handle holds the one-shot AES key that decrypts the result — treat it like
 ## What's actually happening on the wire
 
 ```
-your laptop ──HTTPS──> Sablier API (Cloud Run) ──Cloud Tasks──> GPU worker (Cloud Run + L4)
+your laptop ──HTTPS──> Sablier API ────────────────────────────> GPU worker
      │                                                                   │
      │   1. POST /v1/jobs                                                 │
      │   ◄── 2. ephemeral X25519 pubkey + pinned image digest             │

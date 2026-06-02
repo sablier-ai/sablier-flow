@@ -53,7 +53,7 @@ If FLOW's parameters happened to encode "September 17, 2019 had this specific re
 This is a real phenomenon — strong diffusion models on images can memorize and re-emit training samples when capacity vastly exceeds the data manifold. But for financial returns it's structurally unlikely:
 
 1. **Returns space, not raw price levels.** Lower dimensional, fewer addressable points.
-2. **Limited capacity vs data.** The architecture today is a few-million-parameter conditional flow-matching model trained on thousands of days × tens-to-hundreds of features — small by foundation-model standards. Vision diffusion models that demonstrably memorize are billions of parameters trained on billions of images, a different regime entirely (see e.g. Carlini et al., [Extracting Training Data from Diffusion Models](https://arxiv.org/abs/2301.13188), 2023, which required ≳100M-image scale and explicit attack queries).
+2. **Limited capacity vs data.** The model is small relative to its training data — small by foundation-model standards. Vision diffusion models that demonstrably memorize are billions of parameters trained on billions of images, a different regime entirely (see e.g. Carlini et al., [Extracting Training Data from Diffusion Models](https://arxiv.org/abs/2301.13188), 2023, which required ≳100M-image scale and explicit attack queries).
 3. **Z-scoring + the model's internal smoothing act as information bottlenecks.** The model can't address training points "by date" — no date input.
 4. **The existing validation suite enforces stylized-fact matching.** A generator that just regurgitated training samples would fail those tests.
 

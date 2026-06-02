@@ -12,7 +12,7 @@
 
 The customer has a backtest function `f(prices) -> {"sharpe": ...}`. They run it on their real history and want to know whether the result is genuine signal or overfit to the specific realization their data took. `sablier-flow` answers that by:
 
-1. Training a joint flow model on the customer's history on a remote GPU worker (see [Security posture](#security-posture-today-alpha) for the current and target deployment specifics).
+1. Training a generative model on the customer's history on a remote GPU worker (see [Security posture](#security-posture-today-alpha) for the current and target deployment specifics).
 2. Generating `N` synthetic *alternative versions* of the same history — different paths, same statistical fingerprint.
 3. Running the customer's backtest on every synthetic alt-history.
 4. Comparing the real result to the distribution of synthetic results.
@@ -50,7 +50,6 @@ Two additional outputs surface for serious quants:
 - [Model management](#model-management)
 - [CLI reference](#cli-reference)
 - [Full API reference](#full-api-reference)
-- [Known limitations](#known-limitations)
 - [Common errors](#common-errors)
 - [Glossary](#glossary)
 - [Versioning](#versioning)
@@ -108,7 +107,7 @@ print(verdict.summary())
 verdict.to_html("audit.html")
 ```
 
-That's the entire installation-to-verdict path against `https://flow.sablier.ai/v1` over standard TLS — no cert pinning, no GCS fetch. Swap `real` for your own DataFrame once you've seen it work.
+That's the entire installation-to-verdict path against `https://flow.sablier.ai/v1` over standard TLS — no cert pinning, no extra setup. Swap `real` for your own DataFrame once you've seen it work.
 
 `sf.login()` writes the minted API key to `~/.sablier/credentials` (mode `0600`). Subsequent processes — including different Python interpreters — pick the key up automatically via `sf.Client()`. For CI / non-interactive runs, set `SABLIER_FLOW_API_KEY=sk_live_...` in the environment instead.
 
@@ -276,7 +275,7 @@ paths = sf.generate(fit.model_id, n_paths=1000, like=backtest_window,
 
 **`data_types=`.** A required `dict[str, str]` mapping every column in `features=` to one of `{'price', 'level', 'return'}`. The SDK picks the right transform per column (log-return for prices, z-score for rates / volatility / index levels, identity for already-stationary returns). Bundled demo DataFrames attach the canonical map on `df.attrs['data_types']` so you can pass it straight through. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`.
 
-**Row cadence auto-detection.** `sf.fit` auto-detects the row cadence from the median Δt of `real.index` — **any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly). The detected cadence is surfaced in the pre-flight info line so you can see what the SDK inferred. Irregular indices raise (the SDK refuses to silently round-off your bars). The cyclical embedding the model conditions on is yearly seasonality (day-of-year sin/cos) — intraday-specific seasonality (minute-of-day, day-of-week effects) is not modeled today.
+**Row cadence auto-detection.** `sf.fit` auto-detects the row cadence from the median Δt of `real.index` — **any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly). The detected cadence is surfaced in the pre-flight info line so you can see what the SDK inferred. Irregular indices raise (the SDK refuses to silently round-off your bars).
 
 ### Strategies with a lookback / warmup period
 
@@ -635,15 +634,15 @@ nn_distance_ratio = median(synthetic-to-training NN dist) / median(training-to-t
 
 The denominator's training-to-training NN search excludes self-pairs (the diagonal is masked out). The holdout slice is *not* part of this ratio — both medians come from the training set; the holdout drives the structural-metric suite, not this denominator.
 
-Thresholds (calibrated for financial-returns flow models):
+Thresholds (calibrated for financial-returns):
 
 | `memorization_nn_distance_ratio` | `memorization_risk` | Action |
 |---|---|---|
 | `> 0.80` | `low` | Synth distributed through the training manifold at training-like density. |
-| `[0.50, 0.80]` | `medium` | Synth tighter than training (typical when the model under-disperses tails). Cross-check against `coverage_*` metrics. |
+| `[0.50, 0.80]` | `medium` | Synth tighter than training. Cross-check against `coverage_*` metrics. |
 | `< 0.50` | `high` | Synth essentially overlaps training points — the model is regurgitating. Don't trust the overfit verdict on top of it. |
 
-Why these thresholds (and not the off-the-shelf image-diffusion `< 0.95` cutoff): financial daily-returns are drawn from a noisy continuous distribution, so a perfectly-calibrated flow produces synth that lands *within* the training manifold (ratio < 1.0 is normal, not memorization). Empirically, a customer running `validate` with `coverage_95 = 0.951` (essentially nominal calibration) was being flagged "high memorization" at ratio 0.84 — those two readings are mutually exclusive (a memorized model has collapsed intervals, not nominal coverage). Below `0.50` the synth is closer to training than training is to itself, which *is* a genuine signal of literal sample regurgitation.
+Why these thresholds (and not the off-the-shelf image-diffusion `< 0.95` cutoff): financial daily-returns are drawn from a noisy continuous distribution, so a well-calibrated generator produces synth that lands *within* the training manifold (ratio < 1.0 is normal, not memorization). Below `0.50` the synth is closer to training than training is to itself, which *is* a genuine signal of literal sample regurgitation.
 
 ### Structural validation
 
@@ -755,7 +754,7 @@ from sablier_flow.adapters import as_backtrader_feeds
 
 feeds = as_backtrader_feeds(result, ticker_column="SPY", index=pd.bdate_range(...))
 # list[bt.feeds.PandasData] — each one's OHLC is synthesized from a single
-# close-price column (the ticker_column) since the flow model emits prices, not OHLCV.
+# close-price column (the ticker_column) since the model emits prices, not OHLCV.
 ```
 
 **Gotcha**: backtrader's default `SharpeRatio` analyzer uses `timeframe=Years` and returns `None` on windows shorter than ~2 years. Use:
@@ -1071,7 +1070,7 @@ class Model:
 class GenerationResult:
     paths_returns: np.ndarray                  # (n_paths, horizon, n_features), z-scored
     paths_prices: np.ndarray                   # (n_paths, horizon, n_features), price-level
-    feature_names: list[str]                   # internal cyclical embeddings stripped
+    feature_names: list[str]                   # original input columns only
     last_prices: np.ndarray
     horizon: int
     n_paths: int
@@ -1350,39 +1349,6 @@ class EnvelopeEncrypted:
     @classmethod
     def from_bytes(cls, raw: bytes) -> "EnvelopeEncrypted": ...
 ```
-
----
-
-## Known limitations
-
-The generator is a joint flow trained with the pure CFM objective — no
-auxiliary tail or volatility-clustering losses (every variant we tried
-made things worse). Two structural shapes routinely fail to fully
-transfer to the synthetic distribution even when training converges
-cleanly:
-
-- **Heavy-tailed inputs** — when the real series has fat tails (high
-  realized kurtosis, frequent ≥4σ moves), the synthetic distribution
-  often under-reproduces the extreme quantiles. Strategies whose edge
-  lives in the tail (vol-of-vol, jump-driven, deep-OTM options) will
-  see narrower synthetic distributions than the real one and an
-  overfit verdict that leans optimistic. Always check
-  `report.metrics['extreme.*']` before trusting a tail-dependent
-  verdict.
-- **Vol clustering on GARCH-like inputs** — when the realized volatility
-  process has strong persistence (long-memory GARCH, regime-switching
-  vol), the synthetic paths often miss part of the autocorrelation in
-  squared returns. Strategies that explicitly trade vol regime
-  (volatility breakout, vol-target, GARCH-aware sizing) should treat
-  the verdict as a lower bound on overfitting and verify against
-  `report.metrics['dynamics.*']`.
-
-Both shapes show up in the structural-validation suite — `sf.validate`
-flags them as `warn` or `fail` on the relevant metric groups before
-you build a verdict on top. The rule of thumb: if `report.overall ==
-'fail'` or any `extreme.*` / `dynamics.*` metric is `'fail'`, treat
-the robustness verdict as informational, not load-bearing, on
-tail/vol-cluster-dependent strategies.
 
 ---
 
