@@ -105,8 +105,6 @@ df = prices_pl.to_pandas().set_index("date")         # convert at boundary
 # df ready for the shared workflow above.
 ```
 
-Native Polars support is on the roadmap.
-
 ---
 
 ## Parquet / CSV / Feather (file-based)
@@ -183,6 +181,6 @@ print(sablier_flow.available_demo_datasets())        # list other bundled option
 | Naming | Column names are arbitrary strings; we use them as `feature_names` in the response |
 | Missing data | Drop or forward-fill before calling — the SDK rejects NaN rows |
 | Length | At least 252 rows (1y daily) for stable training; 1000+ recommended; 5000+ is the empirical sweet spot for daily equity panels (see `sf.demo_data()` — ~3500 bars across 7 features) |
-| Row cadence | Auto-detected from `real.index` via median Δt. **Any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly, quarterly). Irregular indices raise. The cyclical embedding is yearly seasonality only — intraday-specific patterns (minute-of-day, day-of-week) are not modeled in 1.1.0. |
+| Row cadence | Auto-detected from `real.index` via median Δt. **Any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly, quarterly). Irregular indices raise. The cyclical embedding is yearly seasonality only — intraday-specific patterns (minute-of-day, day-of-week) are not modeled. |
 
 The SDK does not know what your features mean — it learns the joint distribution from the rows you give it. Equities, FX, futures, credit spreads, vol surfaces, yields, even non-financial time series (energy demand, weather, retail sales) all work the same way.

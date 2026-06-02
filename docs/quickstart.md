@@ -282,21 +282,11 @@ import sablier_flow as sf
 real = sf.demo_data()                              # daily SPY/QQQ/IWM/TLT + 3 macro series, 2010-2023
 print(real.shape, real.attrs['data_types'])        # df.attrs carries the per-column annotation
 
-# 5-min intraday alternative — PREVIEW ONLY. The 1.0.X SDK rejects
-# intraday in sf.fit's frequency check; the dataset ships so you can
-# inspect cadence + the same data_types annotation pattern. Intraday
-# fits light up in 1.1.0.
-# preview = sf.demo_data('us_equities_macro_5min_3mo')
+# 5-min intraday alternative — same shape, same data_types contract, intraday cadence.
+# intraday = sf.demo_data('us_equities_macro_5min_3mo')
 ```
 
 `sablier_flow.demo_data()` returns a clean aligned `pd.DataFrame` from a parquet bundled inside the wheel — no third-party data feed required. You still need an API key (the `fit`/`generate`/`validate` calls reach the hosted service); the data load itself is offline.
-
-## What's not in v1.0
-
-- **Constraints API** — scenario-style stress tests ("what if VIX spends 60 days above 40?") via latent-space optimization. Deferred to v1.1.
-- **Multi-asset beyond equities + macro** — futures, options, credit deferred to v1.5+.
-- **Pre-trained foundation models** — every customer cold-starts training on their own data. Use `sf.estimate_cost('fit', real_data=df, features=cols, horizon=252)` for a deterministic credit estimate.
-- **Survivorship-aware universes** — pre-clean your DataFrame before sending.
 
 ## Next
 

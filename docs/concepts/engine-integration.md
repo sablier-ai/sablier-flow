@@ -129,5 +129,3 @@ If you have an exotic engine and you'd like us to add a first-class adapter, fil
 ## What about live trading?
 
 `sablier-flow` produces *synthetic backtest data*. It's not for live execution. The output looks like historical data; you'd run your existing backtest on it. Don't try to use it as a real-time feed.
-
-For *what-if* scenarios on live state ("what if VIX spikes to 60 tomorrow?"), the constraints API in v1.1 covers that. v1.0 is just unconstrained alternative histories.

@@ -247,7 +247,7 @@ The SDK and worker run a full envelope-encryption + image-digest-pinning protoco
 | **NVIDIA H100 CC mode** (GPU memory encryption) + **NRAS attestation chain** | 🚧 Awaiting H100 quota |
 | **Cryptographic attestation** verified against AMD / NVIDIA root keys before the customer's encryption key is released to the worker | 🚧 Same gate — the SDK's `AttestationVerifier` runs the protocol on every request, but the digest pinned today corresponds to a regular Cloud Run image, not a measured-boot enclave. Production-grade attestation (signature math against pinned root keys) ships with the SEV-SNP rollout. |
 
-**Bottom line**: today the SDK delivers strong network-layer + storage-layer + key-lifecycle protection. It does **not** yet deliver memory-encryption-grade protection against a privileged GCP operator inspecting worker RAM during training. The full SEV-SNP + H100 CC + NRAS attestation deploys with v0.6, which lands when GCP releases our H100 confidential-compute quota. The wire protocol the SDK already speaks is the same one we'll use post-rollout — customer code doesn't change.
+**Bottom line**: today the SDK delivers strong network-layer + storage-layer + key-lifecycle protection. It does **not** yet deliver memory-encryption-grade protection against a privileged GCP operator inspecting worker RAM during training. The full SEV-SNP + H100 CC + NRAS attestation rollout lands when GCP releases our H100 confidential-compute quota. The wire protocol the SDK already speaks is the same one we'll use post-rollout — customer code doesn't change.
 
 ---
 
@@ -289,7 +289,7 @@ paths = sf.generate(fit.model_id, n_paths=1000, like=backtest_window,
 
 **`data_types=`.** A required `dict[str, str]` mapping every column in `features=` to one of `{'price', 'level', 'return'}`. The SDK picks the right transform per column (log-return for prices, z-score for rates / volatility / index levels, identity for already-stationary returns). Bundled demo DataFrames attach the canonical map on `df.attrs['data_types']` so you can pass it straight through. Missing the kwarg raises `TypeError` with the allowed-set message; an unknown value raises `ValueError`.
 
-**Row cadence auto-detection.** `sf.fit` auto-detects the row cadence from the median Δt of `real.index` — **any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly). The detected cadence is surfaced in the pre-flight info line so you can see what the SDK inferred. Irregular indices raise (the SDK refuses to silently round-off your bars). The cyclical embedding the model conditions on is yearly seasonality (day-of-year sin/cos) only — intraday-specific seasonality (minute-of-day, day-of-week effects) is not modeled in 1.1.0 and is on the roadmap for a future minor.
+**Row cadence auto-detection.** `sf.fit` auto-detects the row cadence from the median Δt of `real.index` — **any uniform-cadence DatetimeIndex is accepted** (daily, intraday 5-min / 1-min, weekly, monthly). The detected cadence is surfaced in the pre-flight info line so you can see what the SDK inferred. Irregular indices raise (the SDK refuses to silently round-off your bars). The cyclical embedding the model conditions on is yearly seasonality (day-of-year sin/cos) — intraday-specific seasonality (minute-of-day, day-of-week effects) is not modeled today.
 
 ### Strategies with a lookback / warmup period
 
@@ -344,7 +344,7 @@ The synthetic paths inherit the price anchor at `warmup_start` (so they continue
 | `df.columns` | numeric dtype on every column you list in `features=` — NaNs pass through to the model (it masks); a column whose post-ffill NaN fraction exceeds 0.7 is rejected with an error naming it |
 | values | raw prices, returns, rates, index levels, or volatility — the per-column transform is selected from `data_types=` (log-return for prices, z-score for rates / vol / index levels, identity for returns) |
 | `data_types=` (kwarg) | **required dict** mapping every column in `features=` to one of `{'price', 'level', 'return'}`. Missing the kwarg raises `TypeError`; unknown values raise `ValueError`. Bundled demos attach the canonical map on `df.attrs['data_types']`. |
-| frequency | auto-detected from the median Δt of `df.index`. Allowed: `'daily'`, `'weekly'`, `'monthly'`, `'quarterly'`. Irregular indices raise. Intraday classification is deferred to 1.1.0 (the 5-min demo is preview-only). |
+| row cadence | auto-detected from the median Δt of `df.index`. Any uniform cadence is accepted (daily, intraday 5-min / 1-min, weekly, monthly, quarterly). Irregular indices raise. |
 | length | ≥ 200 rows on `fit` (the SDK rejects locally); shorter slices are allowed for `like=` / `anchor_data=` / `holdout_data=` |
 
 ### Strict `features=` validation
@@ -1002,8 +1002,8 @@ sf.credits(*, api_key=None, **kw)      -> CreditsBalance      # Pydantic — use
 sf.usage(*, since=None, until=None, kind=None, limit=100, api_key=None, **kw) -> list[UsageEvent]
 sf.usage_summary(*, period="month", api_key=None, **kw) -> UsageSummary   # Pydantic — summary.total_credits, .by_kind, ...
 sf.estimate_cost(kind, *, real_data=None, features=None, horizon=None, n_paths=None, n_features=None, n_rows=None, api_key=None, **kw) -> dict[str, Any]
-    # Returns {estimated_credits, low, high, notes}. Wall-clock duration is NOT returned (see 1.0.20 changelog).
-    # `kind` must be one of 'fit' | 'generate' | 'validate' — 'train' is rejected since 1.0.18.
+    # Returns {estimated_credits, low, high, notes}. Wall-clock duration is NOT returned.
+    # `kind` must be one of 'fit' | 'generate' | 'validate' — 'train' is rejected.
 ```
 
 Local helpers (no network):
@@ -1368,13 +1368,11 @@ class EnvelopeEncrypted:
 
 ## Known limitations
 
-FLOW v1 is honest about what it learns and what it doesn't. The
-generator is a joint flow trained with the pure CFM objective — no
+The generator is a joint flow trained with the pure CFM objective — no
 auxiliary tail or volatility-clustering losses (every variant we tried
-made things worse; see the `flow_auxiliary_losses_failed` note in the
-internal methodology log). Two structural shapes routinely fail to
-fully transfer to the synthetic distribution even when training
-converges cleanly:
+made things worse). Two structural shapes routinely fail to fully
+transfer to the synthetic distribution even when training converges
+cleanly:
 
 - **Heavy-tailed inputs** — when the real series has fat tails (high
   realized kurtosis, frequent ≥4σ moves), the synthetic distribution
@@ -1441,13 +1439,6 @@ introduce breaking changes; minor (`X.Y.0`) and patch (`X.Y.Z`) releases
 preserve backwards compatibility. The current version is exposed at
 `sablier_flow.__version__`.
 
-**Current release:** **1.0.21** ([PyPI](https://pypi.org/project/sablier-flow/) · [CHANGELOG](https://github.com/sablier-ai/sablier-flow/blob/main/CHANGELOG.md) · [GitHub releases](https://github.com/sablier-ai/sablier-flow/releases))
+See [PyPI](https://pypi.org/project/sablier-flow/) for the latest release, the [CHANGELOG](https://github.com/sablier-ai/sablier-flow/blob/main/CHANGELOG.md) for the full history, and [GitHub releases](https://github.com/sablier-ai/sablier-flow/releases) for per-release notes.
 
-**Recent changes (full history in the CHANGELOG):**
-
-- **1.0.21** — 28 fixes from an adversarial multi-lens audit: CLI `generate` now wires `--data-types`, `LoginResult` / `JobHandle` reprs redact secrets, `endpoint=` kwarg + `SABLIER_FLOW_ENDPOINT` env-var both go through the allowlist (no more `http://` leak), `predictive_rank_score` rejects mixed dict-vs-scalar inputs, Bailey-LdP analytical-DSR units warning, `evaluate_family` dual-routes `data_types` / `api_key` / `frequency` to both fit and generate, `from sablier_flow.adapters import write_lean_csv_universe` now works, `FamilyReport.summary()` leads with `'overfit_selection'` when PBO ≥ 0.6.
-- **1.0.20** — Four co-founder-flagged fixes: `sf.login()` truncates `key_prefix` to 12 chars regardless of what the server sends, `sf.estimate_cost(...)` pops `estimated_duration_s` from the returned dict (heuristic was 4–5× too high), `DeflatedSharpeReport.__format__` routes numeric specs to `.realistic` so `f"{report:.4f}"` no longer crashes, `evaluate_family` emits a `UserWarning` when `len(real_data) != gen.horizon`.
-- **1.0.19** — `Client.generate` / `generate_async` now anchor forward-forecast paths at `anchor_data.iloc[-1]` (was falling back to checkpoint-end, producing a visible ~$90 SPY-level gap on the docs site chart); broad docs sweep removing `client.alternative_versions(...)` (never existed), `MemorizationReport.risk` (real type is `ValidationReport.memorization_risk`), and the never-implemented `strict_oos_mode=True` parameter.
-- **1.0.18** — `__dir__()` on `sablier_flow` so `dir(sf)` returns the full 60-name public surface (was 2 — agent introspection was effectively empty); `estimate_cost` is credits-only (no more bogus wall-clock prediction); `evaluate_family` runtime warning drops the wall-clock seconds figure.
-
-Pin behaviour you care about explicitly. The 1.0.X series is the first production release of the public Python SDK.
+Pin behaviour you care about explicitly.

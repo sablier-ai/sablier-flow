@@ -12,7 +12,7 @@ Quant funds either:
 
 Categories 1 and 2 are our customers. They will not let their data leave their infrastructure under any circumstance. They've built their entire operating model — data licensing, vendor contracts, security reviews, compliance — around that constraint.
 
-This is exactly why the architecture is what it is. **You hold your data; we hold the compute.** The envelope-encryption + image-pinning wire protocol the SDK already speaks is designed to bind that pairing to a confidential VM with hardware memory encryption; the substrate that delivers that binding ships with v0.6 (see [Security posture](#security-posture-today)).
+This is exactly why the architecture is what it is. **You hold your data; we hold the compute.** The envelope-encryption + image-pinning wire protocol the SDK already speaks is designed to bind that pairing to a confidential VM with hardware memory encryption; the substrate that delivers that binding is on the roadmap (see [Security posture](#security-posture-today)).
 
 ## The data contract — DataFrame in, DataFrame out
 
@@ -157,8 +157,8 @@ The protocol above runs on every request — the code is real, the digest pinnin
 |---|---|
 | TLS 1.3 in transit, KMS-encrypted at rest in GCS, one-shot per-job symmetric keys | ✓ Today |
 | Image-digest pinning verified before the encryption key is generated | ✓ Today (structure-only check; full root-key signature verification ships with the SEV-SNP rollout) |
-| **AMD SEV-SNP** CPU memory encryption — encrypts RAM so even a privileged host OS / GCP operator can't see plaintext during training | 🚧 v0.6 (awaiting GCP H100-CC quota) |
-| **NVIDIA H100 CC mode** — GPU memory encryption, same goal at the device level | 🚧 v0.6 |
+| **AMD SEV-SNP** CPU memory encryption — encrypts RAM so even a privileged host OS / GCP operator can't see plaintext during training | 🚧 Roadmap (awaiting GCP H100-CC quota) |
+| **NVIDIA H100 CC mode** — GPU memory encryption, same goal at the device level | 🚧 Roadmap |
 | **NRAS attestation chain** — NVIDIA-signed attestation of the GPU state | 🚧 Roadmap |
 
 What this means: today's deployment is meaningfully better than vanilla cloud SaaS (encrypted everywhere except in the worker's RAM during the ~minutes-long training job), but it does **not** yet defend against a privileged GCP insider inspecting that RAM. The SDK and the wire protocol the customer code touches stay identical when SEV-SNP + H100 CC ship — only the substrate underneath changes.
@@ -179,11 +179,9 @@ The error messages point to the exact problem so the customer's data team can fi
 
 ## Frequency
 
-`sf.fit` auto-detects the row cadence from your `DatetimeIndex` via the median Δt. **Any uniform-cadence DatetimeIndex is accepted in 1.1.0** — daily, intraday (5-min / 1-min / hourly), weekly, monthly, quarterly. Irregular indices raise; the SDK refuses to silently round-off your bars. The detected cadence is surfaced in the pre-flight info line so you can confirm what the SDK inferred before the GPU round-trip.
+`sf.fit` auto-detects the row cadence from your `DatetimeIndex` via the median Δt. **Any uniform-cadence DatetimeIndex is accepted** — daily, intraday (5-min / 1-min / hourly), weekly, monthly, quarterly. Irregular indices raise; the SDK refuses to silently round-off your bars. The detected cadence is surfaced in the pre-flight info line so you can confirm what the SDK inferred before the GPU round-trip.
 
-Intraday classification (minute / 5-min / 15-min bars) is **deferred to 1.1.0** when the cyclical minute-of-day / day-of-week embeddings ship. The bundled `sf.demo_data('us_equities_macro_5min_3mo')` is a preview-only sample so you can see the data shape today; running `sf.fit` on a 5-min DataFrame raises during the schema check. For now, aggregate to daily bars before fitting.
-
-When intraday lights up: the model will emit a single price track per feature per path, not full OHLCV. Strategies that key off intra-bar high/low/volume will see flat OHLC on synthetic.
+The model emits a single price track per feature per path, not full OHLCV. Strategies that key off intra-bar high/low/volume will see flat OHLC on synthetic.
 
 ## Multiple asset classes in one model
 
