@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-08 — input-window gap warning
+
+### Added
+- `fit` / `generate` / `validate` now emit a warning when a supplied DataFrame
+  (`real_data` / `like` / `anchor_data` / `holdout_data`) has interior NaN gaps
+  below the reject threshold. Those bars are forward-filled before the model
+  sees them, so the warning flags likely calendar misalignment between feature
+  sources (e.g. an FX/macro column on a different trading calendar than your
+  equity columns). Non-breaking; no API change.
+
 ## [1.1.0] - 2026-06-01 — data_types vocabulary collapse + intraday gate lifted
 
 The customer-facing surface now speaks a clean three-string `data_types`

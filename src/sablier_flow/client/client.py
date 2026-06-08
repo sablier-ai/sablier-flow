@@ -40,6 +40,7 @@ import base64
 import io
 import os
 import time
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -2478,6 +2479,29 @@ def _check_nan_fraction(
             "extend history so they're populated for >30% of bars, or "
             "load a different dataset. NaNs are otherwise passed through "
             "to the model (which masks them)."
+        )
+
+    # Surface smaller gaps that pass the reject threshold but still matter:
+    # interior NaNs get forward-filled before the transform server-side, so
+    # the affected bars carry no fresh signal. This is the classic symptom of
+    # calendar misalignment between feature sources (e.g. an FX/macro column
+    # on a different trading calendar than equity columns). Warn, don't fail —
+    # passing gaps through is intentional, but the customer should know.
+    gappy: list[tuple[str, float]] = []
+    for col in features:
+        if col not in df.columns:
+            continue
+        raw_frac = float(df[col].isna().mean())
+        if 0.0 < raw_frac <= _MAX_NAN_FRACTION:
+            gappy.append((col, raw_frac))
+    if gappy:
+        details = ", ".join(f"{col!r} ({frac:.1%})" for col, frac in gappy)
+        warnings.warn(
+            f"{arg_name} has NaN gaps in column(s): {details}. These bars are "
+            "forward-filled before generation and carry no fresh signal — "
+            "often a sign of calendar misalignment between feature sources. "
+            "Align/clean these columns for best generation quality.",
+            stacklevel=2,
         )
 
 
