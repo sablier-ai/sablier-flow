@@ -351,15 +351,22 @@ class Client:
         DataFrame — useful when you've already done a split externally,
         or when running an offline calibration where OOS is irrelevant.
 
-        ``horizon`` is the window length the model is trained against
-        (default: sensible 504 ~ 2y on daily bars, or half the available
-        history if shorter). The generator is horizon-agnostic, so
+        ``horizon`` is the number of **time steps (bars)** the model is
+        trained against — purely a count, independent of cadence: 504 means
+        504 bars whether those are daily (~2y), hourly, or 1-min bars.
+        Default: 504 steps, or half the available history if shorter. The
+        maximum is data-adaptive: it scales with how many rows you pass,
+        allowing a longer window only when the history leaves enough
+        non-overlapping spans to train it robustly (floor 504 steps, capped
+        at 5000). The generator is horizon-agnostic, so
         ``generate(model_id, horizon=M)`` works for any ``M`` without
         retraining; quality is best near the trained value and degrades
         modestly as you stretch further past it.
         """
         if horizon is not None:
-            _check_fit_horizon_bounds(horizon)
+            _check_fit_horizon_bounds(
+                horizon, n_rows=len(real_data), train_split=train_split,
+            )
         if seed is None:
             import secrets
             seed = secrets.randbelow(2**31 - 1)
@@ -1378,7 +1385,9 @@ class Client:
             recover this job — the one-shot ``result_key`` lives only
             inside the handle."""
         if horizon is not None:
-            _check_fit_horizon_bounds(horizon)
+            _check_fit_horizon_bounds(
+                horizon, n_rows=len(real_data), train_split=train_split,
+            )
         if seed is None:
             import secrets
             seed = secrets.randbelow(2**31 - 1)
@@ -2191,32 +2200,75 @@ def _model_info_to_dataclass(info: Any) -> Model:
 
 # Local bounds checks so an obviously-bad horizon / n_paths fails
 # sub-second on the customer's machine instead of after a 1-2 min queue +
-# job-start + cryptic Cloud Run failure. The server still enforces the
-# same caps as defense in depth.
-_FIT_HORIZON_MAX = 504
+# job-start + cryptic Cloud Run failure. The server enforces an
+# architectural backstop independently (the estimate endpoint caps horizon
+# at 5000; the denoiser's learned positional-embedding table —
+# ``sablier_flow_internal`` ``MAX_HORIZON`` — tops out at 8192).
+_FIT_HORIZON_FLOOR = 504        # always-allowed cap (the legacy flat value)
+_FIT_HORIZON_CEILING = 5000     # never exceed the server's hard backstop
+_FIT_OBS_LENGTH = 200           # encoder history consumed per training window
+_FIT_MIN_NONOVERLAP_SPANS = 2   # require >= this many non-overlapping horizon spans
 _GENERATE_HORIZON_MAX = 5000
 _GENERATE_N_PATHS_MAX = 1_000_000
 _VALIDATE_N_PATHS_MAX = 10_000
 
 
-def _check_fit_horizon_bounds(horizon: Any) -> None:
-    """Reject horizon <= 0 or > :data:`_FIT_HORIZON_MAX` before any network
-    call. Mirrors the server-side cap so callers see the same error message
-    locally that they'd otherwise see after a paid round-trip."""
+def _fit_horizon_max(n_rows: int | None, train_split: float | None) -> int:
+    """Data-adaptive upper bound on the *training* horizon.
+
+    A flat cap both under-serves data-rich customers (who can train a
+    longer window robustly) and rubber-stamps data-poor ones. Training
+    horizon ``H`` consumes ``H`` bars per window, and the number of
+    *non-overlapping* spans of length ``H`` in the training portion is
+    ``(train_rows - obs_length) // H``. Requiring at least
+    :data:`_FIT_MIN_NONOVERLAP_SPANS` such spans is the simplest honest
+    anti-memorization bound — a long window on thin data leaves too few
+    independent spans and the model just memorizes (the server's
+    NN-distance audit is the backstop; failing fast here is kinder).
+
+    The result is clamped to ``[_FIT_HORIZON_FLOOR, _FIT_HORIZON_CEILING]``
+    so (a) no horizon that passed the old flat-504 check ever newly fails
+    and (b) the cap never exceeds the server backstop. Falls back to the
+    flat floor when ``n_rows`` is unknown.
+    """
+    if not n_rows or n_rows <= 0:
+        return _FIT_HORIZON_FLOOR
+    ts = train_split if (train_split is not None and 0.0 < train_split <= 1.0) else 1.0
+    train_rows = int(n_rows * ts)
+    usable = max(train_rows - _FIT_OBS_LENGTH, 0)
+    data_max = usable // _FIT_MIN_NONOVERLAP_SPANS
+    return int(min(_FIT_HORIZON_CEILING, max(_FIT_HORIZON_FLOOR, data_max)))
+
+
+def _check_fit_horizon_bounds(
+    horizon: Any,
+    *,
+    n_rows: int | None = None,
+    train_split: float | None = None,
+) -> None:
+    """Reject horizon <= 0 or above the data-adaptive cap before any
+    network call. The cap scales with the supplied history length (see
+    :func:`_fit_horizon_max`); when ``n_rows`` is omitted it falls back to
+    the flat :data:`_FIT_HORIZON_FLOOR`, so existing callers keep their
+    behavior. Mirrors the server backstop so callers see the same error
+    locally that they'd otherwise hit after a paid round-trip."""
+    hmax = _fit_horizon_max(n_rows, train_split)
     try:
         h = int(horizon)
     except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"horizon must be an integer in (0, {_FIT_HORIZON_MAX}]; got "
-            f"{horizon!r}"
+            f"horizon must be an integer in (0, {hmax}]; got {horizon!r}"
         ) from exc
-    if h <= 0 or h > _FIT_HORIZON_MAX:
+    if h <= 0 or h > hmax:
+        ts = train_split if train_split is not None else 1.0
+        ctx = f" for {n_rows} rows (train_split={ts:g})" if n_rows else ""
         raise ValueError(
-            f"horizon must be in (0, {_FIT_HORIZON_MAX}]; got {h}. "
-            "Longer training horizons inflate GPU memory super-linearly "
-            "and the model is horizon-agnostic at generate time anyway — "
-            "train at 504 (≈2y daily) and ask for any horizon you want "
-            "at generate."
+            f"horizon must be in (0, {hmax}]; got {h}. The fit-horizon cap "
+            f"is {hmax}{ctx}: a longer training window needs proportionally "
+            f"more history to leave enough non-overlapping spans to train on "
+            f"(>= {_FIT_MIN_NONOVERLAP_SPANS}). The generator is "
+            f"horizon-agnostic — train at the cap and generate any horizon up "
+            f"to {_GENERATE_HORIZON_MAX} without retraining."
         )
 
 
