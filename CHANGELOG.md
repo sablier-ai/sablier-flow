@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-06-09 — data-adaptive fit-horizon cap
+
+### Changed
+- The `fit` `horizon` cap is now data-adaptive instead of a flat 504 time
+  steps. The maximum scales with how many rows you pass: a longer training
+  window is allowed only when the history leaves enough non-overlapping
+  spans to train it robustly (floor 504 steps, capped at 5000). Data-rich
+  callers — including intraday users with many bars — can now train longer
+  windows; everyone else is unchanged. `horizon` is a count of time steps
+  (bars), independent of cadence. Purely additive: any horizon that passed
+  the old flat-504 check still passes. SDK-only; no server change.
+
 ## [1.1.1] - 2026-06-08 — input-window gap warning
 
 ### Added
