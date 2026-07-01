@@ -62,6 +62,27 @@ report = sf.robustness(real_result, synth_results, primary_metric='sharpe')
 print(report.summary())
 ```
 
+## Catalog models — skip training
+
+Sablier ships **pre-trained catalog models** for common universes, so you can generate synthetic paths without fitting your own. Browse them with `sf.catalog()`, then generate against a recent window of your data:
+
+```python
+import sablier_flow as sf
+
+# Browse the pre-trained catalog (no fit required).
+for m in sf.catalog():
+    print(m.model_id, "—", m.display_name, "|", len(m.feature_data_types or {}), "features")
+    print("  finval scorecard:", m.scorecard)   # e.g. {'63': 0.78, '252': 0.80, '504': 0.80, '756': 0.82}
+
+# Generate — bring a recent window of the model's features; data_types is
+# auto-filled from the model's registered schema.
+cat    = sf.catalog()[0]
+recent = my_prices[list(cat.feature_data_types)].iloc[-252:]   # the model's universe
+paths  = sf.generate(cat.model_id, anchor_data=recent, n_paths=200, horizon=252)
+```
+
+Each catalog model exposes its input schema (`feature_data_types`), a human-readable `display_name`, and a finval `scorecard`, so you can pick the right one before generating.
+
 ## Examples
 
 Live empirical demos with executed outputs baked in. **Preview** links go to the rendered notebooks on the docs site (always works); **source** links go to the raw `.ipynb` on GitHub (clone, download, or — when GitHub's notebook viewer is operating — render inline). [Why two links?](examples/README.md)

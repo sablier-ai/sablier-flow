@@ -47,8 +47,8 @@ extra:
       link: https://sablier.ai
       name: sablier.ai
     - icon: fontawesome/solid/envelope
-      link: mailto:team@sablier.it
-      name: team@sablier.it
+      link: mailto:team@sablier.ai
+      name: team@sablier.ai
 
 extra_css:
   - assets/extra.css

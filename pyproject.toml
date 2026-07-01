@@ -9,7 +9,7 @@ description = "Synthetic alternative-history generation for backtest overfitting
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [{ name = "Sablier", email = "team@sablier.it" }]
+authors = [{ name = "Sablier", email = "team@sablier.ai" }]
 keywords = [
     "quantitative-finance",
     "backtesting",

@@ -137,6 +137,28 @@ sf.list_jobs(status="running"); sf.cancel_job(handle)
 
 ---
 
+## Catalog models — generate without fitting
+
+Sablier hosts **pre-trained catalog models** for common universes. They skip `fit` entirely: browse with `sf.catalog()`, then `generate` against a recent window of the model's features.
+
+```python
+# Browse the pre-trained, shared catalog models.
+for m in sf.catalog():
+    print(m.model_id, m.display_name, m.scorecard)   # scorecard: finval scores keyed by horizon
+
+cat = sf.catalog()[0]
+print(cat.feature_data_types)     # the input schema: {feature -> 'price'|'level'|'return'}
+
+# Bring a recent window of exactly those features. data_types is auto-filled
+# from the model's registered schema, so you don't pass it.
+recent = my_prices[list(cat.feature_data_types)].iloc[-252:]
+paths  = sf.generate(cat.model_id, anchor_data=recent, n_paths=200, horizon=252)
+```
+
+Catalog models surface four extra fields on the `Model` object (also on `get_model` / `list_models`): `visibility` (`'catalog'` vs `'private'`), `display_name`, `feature_data_types` (input schema), and `scorecard` (finval validation scores per horizon). `sf.catalog()` is just `list_models()` filtered to `visibility == 'catalog'`.
+
+---
+
 ## Forward generation — deployment forecasting
 
 Same generator, different anchor: instead of paralleling a past window, project forward from your most recent bar.

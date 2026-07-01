@@ -8,7 +8,7 @@ copy-pasting an API key from the web dashboard:
     On any device, open https://sablier.ai/auth/device
     and enter the code: ABCD-EFGH
     Waiting for approval...
-    Logged in as team@sablier.it.
+    Logged in as team@sablier.ai.
 
     >>> client = sf.Client()                         # auto-picks up stored key
 
