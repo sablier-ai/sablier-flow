@@ -187,6 +187,12 @@ class ModelInfoResponse(BaseModel):
     created_at: str | None = None
     last_used_at: str | None = None
     expires_at: str | None = None
+    # Catalog-model discoverability (1.2.0). All optional / default None so
+    # older servers that don't populate them still deserialize cleanly.
+    visibility: str | None = None
+    display_name: str | None = None
+    feature_data_types: dict[str, str] | None = None
+    scorecard: dict[str, float] | None = None
 
 
 class ListModelsResponse(BaseModel):

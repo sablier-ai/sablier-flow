@@ -374,6 +374,27 @@ class Model:
     successful generate/validate; after that the server may
     garbage-collect the encrypted blobs."""
 
+    visibility: str | None = None
+    """``'private'`` (owned by your org) or ``'catalog'`` (a pre-trained
+    shared model surfaced to every org). ``None`` on servers that
+    predate catalog models. Use :func:`sablier_flow.catalog` to list
+    only the catalog models."""
+
+    display_name: str | None = None
+    """Human-readable name for catalog models (e.g. ``'US Equities —
+    Wide'``). ``None`` for private models and older servers."""
+
+    feature_data_types: dict[str, str] | None = None
+    """Registered ``data_types`` map (feature -> ``'price'`` |
+    ``'level'`` | ``'return'``) for catalog models. Lets you inspect the
+    input schema before generating; :meth:`Client.generate` auto-fills
+    ``data_types`` from it when you omit them. ``None`` when the server
+    did not record it."""
+
+    scorecard: dict[str, float] | None = None
+    """finval validation scores keyed by horizon (as a string), for
+    catalog models. ``None`` for private models / older servers."""
+
 
 @dataclass(frozen=True)
 class ValidationReport:

@@ -467,6 +467,24 @@ class Client:
             import secrets
             seed = secrets.randbelow(2**31 - 1)
         idempotency_key = _ensure_idempotency_key(idempotency_key)
+        # 1.2.0 — catalog-model ergonomics: when the customer omits
+        # ``data_types`` we fetch the model's registered
+        # ``feature_data_types`` and use them, so a catalog user can call
+        # ``sf.generate(catalog_id, anchor_data=df)`` with no data_types.
+        # Only when a reference window is supplied (the sole case where
+        # data_types is validated/forwarded — a data-less generate reuses
+        # the server-side types, so no fetch needed) and only when
+        # data_types is None (never when the user passed them). Best-effort:
+        # a fetch failure or a model with no registered types falls through
+        # to the prior behavior.
+        if data_types is None and (anchor_data is not None or like is not None):
+            try:
+                _model = self.get_model(model_id)
+                _fdt = getattr(_model, "feature_data_types", None)
+                if _fdt:
+                    data_types = dict(_fdt)
+            except Exception:
+                pass
         # Validate the optional DataFrame args. Anchor / like are
         # typically short windows (don't enforce 200-row floor).
         if anchor_data is not None:
@@ -774,6 +792,24 @@ class Client:
         """
         resp = self._transport.list_models(limit=int(limit))
         return [_model_info_to_dataclass(m) for m in resp.models]
+
+    def catalog(self, *, limit: int = 50) -> list[Model]:
+        """List only the **catalog models** — pre-trained shared models
+        (``visibility == 'catalog'``) that Sablier surfaces to every org.
+
+        Same return shape as :meth:`list_models` (a list of :class:`Model`),
+        filtered to catalog visibility. Catalog models carry a
+        ``display_name``, a ``feature_data_types`` input schema, and a
+        finval ``scorecard`` you can inspect before generating. Because
+        their ``feature_data_types`` are registered server-side,
+        :meth:`generate` auto-fills ``data_types`` for you::
+
+            cat = client.catalog()[0]
+            paths = client.generate(cat.model_id, anchor_data=df)
+        """
+        return [
+            m for m in self.list_models(limit=limit) if m.visibility == "catalog"
+        ]
 
     def get_model(self, model_id: str) -> Model:
         """Fetch metadata for a single model. Raises ``ValueError`` if
@@ -2195,6 +2231,12 @@ def _model_info_to_dataclass(info: Any) -> Model:
         created_at=info.created_at,
         last_used_at=info.last_used_at,
         expires_at=info.expires_at,
+        # Catalog-model discoverability (1.2.0). ``getattr`` guards against
+        # a wire model deserialized by an older transport schema.
+        visibility=getattr(info, "visibility", None),
+        display_name=getattr(info, "display_name", None),
+        feature_data_types=getattr(info, "feature_data_types", None),
+        scorecard=getattr(info, "scorecard", None),
     )
 
 
@@ -3220,6 +3262,20 @@ def list_models(
     _reject_unknown_kwargs(kwargs, allowed_call_kwargs=frozenset())
     client, _ = _build_client(api_key, kwargs)
     return client.list_models(limit=limit)
+
+
+def catalog(
+    *,
+    limit: int = 50,
+    api_key: str | None = None,
+    **kwargs: Any,
+) -> list[Model]:
+    """Shortcut for :meth:`Client.catalog` using a one-shot Client.
+
+    Returns only the catalog (pre-trained, shared) models."""
+    _reject_unknown_kwargs(kwargs, allowed_call_kwargs=frozenset())
+    client, _ = _build_client(api_key, kwargs)
+    return client.catalog(limit=limit)
 
 
 def get_model(

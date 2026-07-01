@@ -84,7 +84,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__version__ = "1.1.2"
+__version__ = "1.2.0"
 
 __all__ = [
     "ALLOWED_DATA_TYPES",
@@ -115,6 +115,7 @@ __all__ = [
     "__version__",
     "available_demo_datasets",
     "cancel_job",
+    "catalog",
     "consistency_check",
     "credits",
     "deflated_sharpe",
@@ -195,6 +196,9 @@ def __getattr__(name: str) -> Any:
     if name == "list_models":
         from sablier_flow.client.client import list_models
         return list_models
+    if name == "catalog":
+        from sablier_flow.client.client import catalog
+        return catalog
     if name == "get_model":
         from sablier_flow.client.client import get_model
         return get_model
