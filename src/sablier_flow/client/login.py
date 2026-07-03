@@ -61,17 +61,19 @@ _LOG = logging.getLogger(__name__)
 _ALLOWED_HOST_EXACT = {"sablier.ai"}
 _ALLOWED_HOST_SUFFIX = (".sablier.ai",)
 # Cloud Run serves the same service under TWO hostname forms:
-#   * canonical long form:  sablier-api-<hash>.<region>.run.app
-#   * short alias:          sablier-api-<hash>-<region>.a.run.app
+#   * canonical long form:  sablier[-flow]-api-<hash>.<region>.run.app
+#   * short alias:          sablier[-flow]-api-<hash>-<region>.a.run.app
 # Both are valid and routable — the short form is what Cloud Run
 # actually shows in the console and what our deploy scripts use as the
 # canonical prod URL (see scripts/e2e_smoke.py). Both must be on the
 # allowlist or a credentials file pointing at the canonical prod URL
 # silently falls back to DEFAULT_ENDPOINT on next load. Hash is hex
 # (no dashes) on the short form — that's the Cloud Run convention.
+# The optional `flow-` segment covers the backend-v2 service name
+# (`sablier-flow-api`) alongside the legacy monolith (`sablier-api`).
 _ALLOWED_HOST_REGEX = (
-    re.compile(r"^sablier-api-[a-z0-9-]+\.us-central1\.run\.app$"),
-    re.compile(r"^sablier-api-[a-z0-9]+-uc\.a\.run\.app$"),
+    re.compile(r"^sablier-(flow-)?api-[a-z0-9-]+\.us-central1\.run\.app$"),
+    re.compile(r"^sablier-(flow-)?api-[a-z0-9]+-uc\.a\.run\.app$"),
 )
 
 
